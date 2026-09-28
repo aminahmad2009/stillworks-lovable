@@ -1,8 +1,8 @@
-# Lovable Local — Documentation
+# Stillworks — Documentation
 
-**Product ID:** `codewoxy-lovable-local` · **Version:** 0.2.0 · **Built by:** CodeWoxy
+**Product ID:** `codewoxy-stillworks` · **Version:** 0.2.0 · **Built by:** CodeWoxy
 
-Lovable Local is a single-user, on-device clone of a prompt-to-app builder. You describe an app in
+Stillworks is a single-user, on-device prompt-to-app studio. You describe an app in
 chat; an agent edits real files in a real project folder; a real Vite dev server renders it live in a
 preview pane; every turn is committed to a real git history you can roll back.
 
@@ -23,6 +23,7 @@ access goes through an OpenAI-compatible API you supply.
 | 8 | [Desktop app & packaging](08-desktop-and-packaging.md) | Electron wrapper, NSIS installer, data location |
 | 9 | [Versioning & releases](09-versioning-and-releases.md) | Product ID, semver policy, changelog discipline, tagging |
 | 10 | [Troubleshooting](10-troubleshooting.md) | Symptom → cause → fix for everything that commonly goes wrong |
+| — | [Legal](../legal/README.md) | Draft EULA, terms of sale, privacy policy, refund policy — with the pre-publication checklist |
 
 ## Two-minute mental model
 

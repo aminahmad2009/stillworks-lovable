@@ -177,7 +177,19 @@ yarn  install|add|run|list
 ```
 
 The agent has unrestricted write access inside the project, so the shell is the one place a hard
-allowlist is worth the friction. Anything else must be run by you.
+allowlist is worth the friction. Anything else must be run by you. Because the string is handed to a
+shell, matching the start proves nothing about what follows: every `;`, `&`, `|` or newline-separated
+segment must clear the allowlist too, and backticks, `$(…)` and `<`/`>` are refused outright rather
+than parsed. One command per call.
+
+The child process also gets `childEnv()` rather than `process.env` — the platform's API keys and the
+launching shell's credentials stay out of reach of code the model wrote or a dependency's postinstall
+script. See [Overview](01-overview.md) for the same boundary around the dev server and MCP connectors.
+
+A refusal is returned as tool output, not thrown, so the turn continues. The message names the common
+false start explicitly: `mkdir` is never needed because `write_file` and `edit_file` create every
+missing parent directory themselves, and the same is stated in the system prompt's rules and the tool
+description so the agent rarely asks in the first place.
 
 ### `image_generation`
 `{ prompt, path?, size? }` — generates one image and saves it inside the project. See

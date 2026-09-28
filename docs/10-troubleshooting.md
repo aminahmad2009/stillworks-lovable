@@ -112,15 +112,47 @@ If you see orphans, `taskkill //IM node.exe` is too blunt — find the child by 
 **A tool returns `ERROR: Path escapes the project directory`** — working as intended. Every file tool
 resolves through the project root and refuses `..` traversal.
 
-**`Refused: "…" is not on the allowlist`** — `run_command` only permits npm/npx/pnpm/yarn package and
-script operations, `node` on a project script, `tsc`, and read-mostly git. Run anything else yourself
-in a terminal.
+**`Refused: "…" is not on the allowlist ("…" is not)`** — `run_command` only permits npm/npx/pnpm/yarn
+package and script operations, `node` on a project script, `tsc`, and read-mostly git, and every
+`;`/`&`/`|`-separated segment must clear it, so chaining a second command is refused even after a
+permitted first one. Run anything else yourself in a terminal. If it was `mkdir`, that was never
+needed: `write_file` creates parent directories, and the refusal tells the agent so it carries on in
+the same turn instead of stalling.
+
+**A build works in your terminal but fails in a project** — project processes get a scrubbed
+environment, not yours, so a variable that build reads is missing by design. If a project genuinely
+needs one, start the server with `LOVABLE_CHILD_ENV=THAT_VAR` or set it on the project. Secrets belong
+in the project's own `.env` (Vite reads it), never in the platform's environment.
+
+**Banner: "git and npm are not installed"** — checked at boot, not guessed. Stillworks shells out to
+`git` for per-project history and to `npm` to install and run what the agent generates, so nothing works
+without them. Install the missing tool, then restart: the probe runs once at startup and is reported by
+`GET /api/health`.
+
+**Banner: "registry.json is version N; this build writes version 1"** — the data directory was last
+written by a newer Stillworks. The app keeps reading it but refuses every write, so it cannot downgrade
+your project list. Upgrade the app; do not edit the file by hand.
+
+**Support asked for a diagnostics file** — **Settings → Download diagnostics** writes one JSON bundle
+(app and paths, OS/Node versions, prerequisite probe, registry, server log tails, masked settings). Keys
+are masked by the same code the panel uses, and it is opt-in.
 
 **Imported folder shows no preview** — the folder must be a Vite project. The registry adopts it, but
 only starts a server when it recognises one.
 
-**Orphan directories listed on the home grid** — folders under `data/projects/` with no registry
-record (usually a deleted record or a manual copy). Adopt or remove them.
+**Folders listed under "On disk but not in the list"** — leftovers under `data/projects/` with no
+registry record: a removal that kept the files, a manual copy, or a half-built scaffold. **Adopt**
+registers the folder in place, **Move to trash** takes it out of the way. A folder owned by an
+imported project is never listed, because imported projects are matched by absolute path.
+
+**A folder disappeared after removing a project** — it is in `data/.trash/<slug>-<timestamp>`, not
+deleted. Move it back under `data/projects/` (or somewhere else) and **Adopt** it. `Empty trash` is
+what deletes permanently.
+
+**Project list came up empty after a crash or a power cut** — `registry.json` was caught mid-write. The
+next read restores `registry.json.bak`, the mirror of the last complete write, and logs
+`recovered from registry.json.bak`. If both are gone, the projects are still on disk: re-add them with
+**Import folder…**.
 
 **History looks short** — the on-disk transcript is capped at the last 400 messages and only the last
 24 turns are sent to the model. Older content is still in git.
@@ -131,11 +163,16 @@ record (usually a deleted record or a manual copy). Adopt or remove them.
 holds the port range; the app probes 4310–4369 and picks a free one.
 
 **Installer build fails with "Access is denied"** — a running instance is locking
-`release/win-unpacked`. Kill `Lovable Local.exe`, delete `release/win-unpacked`, rebuild.
+`release/win-unpacked`. Kill `Stillworks.exe`, delete `release/win-unpacked`, rebuild.
 
 **Settings/projects are missing in the installed app** — packaged builds use
-`%APPDATA%/Lovable Local/data`, not the repository's `./data`. Dev and installed builds do not share
-state. Point `LOVABLE_DATA_DIR` at one location if you want them to.
+`%APPDATA%/Stillworks/data`, not the repository's `./data`. Dev and installed builds do not share
+state. Point `STILLWORKS_DATA_DIR` at one location if you want them to.
+
+**Upgraded from "Lovable Local" and the list looks wrong** — the first launch copies
+`%APPDATA%/Lovable Local/data` into `%APPDATA%/Stillworks/data` and leaves the original alone. If the
+copy looks incomplete, quit and copy the folder yourself: the old path is a full working state, and
+nothing in the new build deletes it.
 
 **No File/Edit/View/Window menu** — intentional. Everything is in the tray menu and the in-app UI;
 clipboard shortcuts still work in inputs.

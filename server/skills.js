@@ -187,6 +187,12 @@ function normalizeSkill(input, existing = {}) {
     tags,
     brief,
     builtin: false,
+    // Provenance, so a factory download can be recognised and re-downloaded.
+    source: existing.source || input.source || 'user',
+    origin: existing.origin ?? input.origin ?? null,
+    homepage: existing.homepage ?? input.homepage ?? null,
+    version: existing.version ?? input.version ?? null,
+    author: existing.author ?? input.author ?? null,
     createdAt: existing.createdAt || Date.now(),
     updatedAt: Date.now(),
   }
@@ -199,10 +205,27 @@ export async function skillCatalog() {
     ...BUILTIN_SKILLS.map(({ id, name, icon, description, tags }) => ({
       id, name, icon, description, tags, builtin: true,
     })),
-    ...user.map(({ id, name, icon, description, tags, createdAt, updatedAt }) => ({
-      id, name, icon, description, tags, builtin: false, createdAt, updatedAt,
+    ...user.map(({ id, name, icon, description, tags, source, origin, version, createdAt, updatedAt }) => ({
+      id, name, icon, description, tags, builtin: false,
+      source: source || 'user', origin: origin || null, version: version || null,
+      createdAt, updatedAt,
     })),
   ]
+}
+
+/**
+ * Add a downloaded factory skill. Re-downloading the same skill updates the
+ * existing copy instead of leaving two identical entries in the library.
+ */
+export async function installSkill(doc) {
+  const user = await loadUserSkills()
+  const origin = doc?.origin || null
+  const index = origin ? user.findIndex((s) => s.origin === origin) : -1
+  if (index === -1) return createSkill(doc)
+  const next = normalizeSkill({ ...user[index], ...doc }, user[index])
+  user[index] = next
+  await saveUserSkills(user)
+  return next
 }
 
 /** Resolve one skill (built-in or user) by id, including its brief. */

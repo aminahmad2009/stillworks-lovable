@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { TOOL_DEFINITIONS, executeTool } from './tools.js'
+import { aggregatedTools, executeMcpTool } from './mcp/manager.js'
 import { streamChat } from './llm/index.js'
 import { TRANSIENT_CODES } from './llm/sse.js'
 import { imageCapability } from './llm/image.js'
@@ -9,6 +10,7 @@ import { gitCommitAll, gitStatusShort } from './git.js'
 import { listProjectTree } from './files.js'
 import { designBrief } from './designs.js'
 import { skillsBrief } from './skills.js'
+import { canonicalProvider } from './config.js'
 
 const HISTORY_TURNS = 24
 
@@ -62,6 +64,26 @@ function frameworkNotes(template) {
 - Use \`<script setup lang="ts">\` in SFCs. Style with Tailwind utility classes in the template.`,
     }
   }
+  if (template === 'svelte-vite') {
+    return {
+      stack: 'Svelte 5, TypeScript, Vite 8, Tailwind CSS 4.',
+      conventions: `- \`index.html\` loads \`/src/main.ts\`. Do not change that script tag.
+- \`src/main.ts\` mounts \`App.svelte\` from \`src/App.svelte\` onto \`#app\`. Keep that entry point stable.
+- Components go in \`src/components/\` (\`.svelte\` files), routes in \`src/pages/\`, shared helpers in \`src/lib/\`, stores in \`src/stores/\`.
+- Use Svelte 5 runes (\`$state\`, \`$derived\`, \`$effect\`) for reactivity. Style with Tailwind utility classes in the markup.
+- Prefer component-level state with \`let count = $state(0)\` over global stores unless sharing state across components.`,
+    }
+  }
+  if (template === 'nextjs') {
+    return {
+      stack: 'Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4.',
+      conventions: `- Pages live in \`app/\` as directories with \`page.tsx\`, \`layout.tsx\`, etc.
+- Use Server Components by default; add \`'use client'\` only when you need interactivity (hooks, event handlers).
+- API routes go in \`app/api/\` as route handlers (\`route.ts\`).
+- Style with Tailwind utility classes directly in JSX. No tailwind.config.js needed.
+- Data fetching uses async Server Components or React Query for client-side data.`,
+    }
+  }
   return {
     stack: 'React 19, TypeScript, Vite 8, Tailwind CSS 4.',
     conventions: `- \`index.html\` loads \`/src/main.tsx\`. Do not change that script tag.
@@ -103,13 +125,20 @@ Settings → Image model. Never stop without saying what went wrong.
 `
 }
 
-function systemPrompt(project, tree, mode, skillsText = '', imageText = '') {
+function systemPrompt(project, tree, mode, skillsText = '', imageText = '', personas = {}) {
   const fw = frameworkNotes(project.template)
+  
+  // Inject custom personas if provided
+  const systemPersona = personas.system || ''
+  const assistantPersona = personas.assistant || ''
+  const personaSection = systemPersona ? `\n## System Persona\n${systemPersona}` : ''
+  const assistantSection = assistantPersona ? `\n## Assistant Style\n${assistantPersona}` : ''
+  
   const stack = `
 ## Project
 - Name: ${project.name}
 - Root directory: ${project.path}
-- Stack: ${fw.stack}
+- Stack: ${fw.stack}${personaSection}${assistantSection}
 
 ## How Tailwind 4 works here
 - Tailwind is wired through the \`@tailwindcss/vite\` plugin. There is NO tailwind.config.js and you must not create one.
@@ -126,11 +155,13 @@ ${fw.conventions}
 - For changes to an existing file prefer \`edit_file\` with exact text over rewriting the whole file.
 - Read a file before editing it. Do not guess at existing content or indentation.
 - Add dependencies with \`run_command\` using \`npm install <packages>\`. They are installed into the project automatically.
+- \`write_file\` creates every missing parent directory, so never run \`mkdir\` — the shell is allowlisted to package, typecheck and read-mostly git commands and directory tools are not part of it.
 - Do NOT run \`npm run dev\`, \`vite\`, or any long-lived server. The platform already runs the dev server and streams its output; starting another one will conflict on the port.
 - Do NOT run \`git commit\`. The platform commits automatically after each turn.
 - You may run \`npx tsc --noEmit\` to typecheck when a change is intricate.
 - The app is rendered inside an iframe in a preview panel, so avoid anything that requires top-level navigation.
 - Always end your turn with a short text reply. If something failed, say what failed and why — an empty reply is treated as an error.
+- The user can send messages while you are working. A user message that arrives mid-turn is steering: it refines or overrides the plan you are executing. Adjust immediately, keep whatever work is still correct, and acknowledge the change in one clause — do not restart from scratch unless asked, and do not ignore it.
 ${designBrief(project.designId)}${skillsText}${imageText}
 ## Current file tree
 ${tree}
@@ -200,6 +231,19 @@ function emptyResponseError(result, providerName) {
   }
 }
 
+/** Anthropic-shaped content blocks for a user message: images first, then text. */
+function userBlocks(text, images = []) {
+  return [
+    ...(Array.isArray(images) && images.length
+      ? images.map((img) => ({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mediaType || 'image/png', data: img.data },
+      }))
+      : []),
+    { type: 'text', text: String(text || '') },
+  ]
+}
+
 /**
  * Run one agent turn: stream the model, execute its tool calls, feed build
  * errors back in, and keep going until the model stops or the step cap hits.
@@ -216,6 +260,7 @@ export async function runAgentTurn({
   provider,
   signal,
   images = [],
+  steering = null,
 }) {
   const persisted = [{ role: 'user', content: [{ type: 'text', text: userMessage }] }]
 
@@ -241,6 +286,9 @@ export async function runAgentTurn({
   let totalOutput = 0
   let finalText = ''
   let aborted = false
+  // Function-scoped so the abort/error paths can hand undelivered steering back.
+  let steered = 0
+  const leftoverSteering = []
 
   try {
     const tree = await listProjectTree(project.path)
@@ -248,24 +296,46 @@ export async function runAgentTurn({
     const skillsText = await skillsBrief(project.skillIds)
     const activeProvider = provider || settings.provider
     const imageText = mode === 'agent' ? imageBrief(settings, activeProvider) : ''
-    const system = systemPrompt(project, tree, mode, skillsText, imageText)
+    const personas = settings.personas || {}
+    const system = systemPrompt(project, tree, mode, skillsText, imageText, personas)
 
-    const userContent = [
-      ...(images.length
-        ? images.map((img) => ({
-          type: 'image',
-          source: { type: 'base64', media_type: img.mediaType || 'image/png', data: img.data },
-        }))
-        : []),
-      { type: 'text', text: userMessage },
-    ]
+    const userContent = userBlocks(userMessage, images)
 
+    // Build messages array, injecting assistant persona on first turn if provided
+    const assistantPersona = personas.assistant || ''
     const messages = [
       ...trimHistory(history),
+      // If this is the first turn and assistant persona is set, inject it as initial assistant message
+      ...(history.length === 0 && assistantPersona ? [{ role: 'assistant', content: assistantPersona }] : []),
       { role: 'user', content: userContent },
     ]
 
-    emit(project.id, 'turn:start', { mode, model: settings[activeProvider]?.model })
+    /* Mid-turn steering. The HTTP route owns `steering.inbox`; anything the user
+     * types while this turn runs lands there. Draining is only safe at the top
+     * of an iteration, where `messages` ends with a user turn or a tool_result
+     * block — injecting anywhere else would split an assistant tool_use from
+     * its results and the provider would reject the request. */
+    const takeSteering = () => {
+      if (!steering?.inbox?.length) return []
+      return steering.inbox.splice(0, steering.inbox.length)
+    }
+    const injectSteering = (items) => {
+      for (const item of items) {
+        const content = userBlocks(item.text, item.images)
+        messages.push({ role: 'user', content })
+        persisted.push({ role: 'user', content })
+        steered++
+        emit(project.id, 'turn:steered', {
+          text: item.text,
+          images: item.images?.length || 0,
+          step: steps,
+          at: item.at || Date.now(),
+          queuedAt: item.queuedAt || null,
+        })
+      }
+    }
+
+    emit(project.id, 'turn:start', { mode, model: settings[canonicalProvider(activeProvider)]?.model })
 
     const maxSteps = settings.agent?.maxSteps ?? 24
     const changedFiles = new Set()
@@ -281,12 +351,15 @@ export async function runAgentTurn({
       }
       steps++
 
+      const arrived = takeSteering()
+      if (arrived.length) injectSteering(arrived)
+
       const result = await streamWithRetry({
         settings,
         provider,
         system,
         messages,
-        tools: mode === 'agent' ? TOOL_DEFINITIONS : [],
+        tools: mode === 'agent' ? [...TOOL_DEFINITIONS, ...aggregatedTools()] : [],
         signal,
         onText: (delta) => emit(project.id, 'assistant:delta', { delta, step: steps }),
         onThinking: (delta) => emit(project.id, 'assistant:thinking', { delta, step: steps }),
@@ -337,7 +410,17 @@ export async function runAgentTurn({
       }
 
       if (mode !== 'agent' || !hasTools) {
-        // In plan mode, or when the model produced no tool calls, the turn is over.
+        // In plan mode, or when the model produced no tool calls, the turn is
+        // over — unless the user spoke while the last step was streaming. Then
+        // one more step answers them instead of throwing the message away.
+        const late = takeSteering()
+        if (late.length) {
+          if (mode === 'agent' && steps < maxSteps && !signal?.aborted) {
+            injectSteering(late)
+            continue
+          }
+          leftoverSteering.push(...late)
+        }
         break
       }
 
@@ -421,6 +504,10 @@ export async function runAgentTurn({
       }
     }
 
+    // Anything still queued (abort, step cap, plan mode) goes back to the route
+    // so it can open a follow-up turn instead of silently dropping the message.
+    leftoverSteering.push(...takeSteering())
+
     if (steps >= maxSteps) {
       emit(project.id, 'turn:maxsteps', { maxSteps })
     }
@@ -461,8 +548,8 @@ export async function runAgentTurn({
       return { text: finalText, steps, usage, commit, error: historyError.message }
     }
 
-    finish({ steps, usage, commit, aborted })
-    return { text: finalText, steps, usage, commit, aborted }
+    finish({ steps, usage, commit, aborted, steered })
+    return { text: finalText, steps, usage, commit, aborted, steered, leftoverSteering }
   } catch (err) {
     const aborted = signal?.aborted || err?.name === 'AbortError' || /aborted/i.test(err?.message || '')
     if (aborted) {
@@ -476,6 +563,9 @@ export async function runAgentTurn({
         usage: { inputTokens: totalInput, outputTokens: totalOutput },
         commit: null,
         aborted: true,
+        steered,
+        // Left in the inbox on purpose: the route reports undelivered steering.
+        leftoverSteering,
       }
     }
 

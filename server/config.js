@@ -20,19 +20,25 @@ export const APP_VERSION = pkg.version
 
 /** Stable product identifier — the same string across builds, machines and
  *  installs. Used as the desktop appId stem and shown in About / health. */
-export const PRODUCT_ID = pkg.productId || 'codewoxy-lovable-local'
+export const PRODUCT_ID = pkg.productId || 'codewoxy-stillworks'
 
-export const PRODUCT_NAME = pkg.build?.productName || 'Lovable Local'
+export const PRODUCT_NAME = pkg.build?.productName || 'Stillworks'
 export const COMPANY = pkg.company || 'CodeWoxy'
 export const REPOSITORY = String(pkg.repository?.url || pkg.repository || '').replace(/^git\+/, '').replace(/\.git$/, '')
 
+// STILLWORKS_DATA_DIR is the current name. LOVABLE_DATA_DIR keeps working so
+// existing scripts, shortcuts and the packaged app's first launch are unaffected.
+const dataOverride = process.env.STILLWORKS_DATA_DIR || process.env.LOVABLE_DATA_DIR
+
 export const WEB_DIR = path.join(ROOT_DIR, 'web')
-export const DATA_DIR = process.env.LOVABLE_DATA_DIR
-  ? path.resolve(process.env.LOVABLE_DATA_DIR)
+export const DATA_DIR = dataOverride
+  ? path.resolve(dataOverride)
   : path.join(ROOT_DIR, 'data')
 
 export const PROJECTS_DIR = path.join(DATA_DIR, 'projects')
 export const META_DIR = path.join(DATA_DIR, 'meta')
+/** Removed project folders land here instead of being deleted outright. */
+export const TRASH_DIR = path.join(DATA_DIR, '.trash')
 export const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json')
 export const REGISTRY_FILE = path.join(DATA_DIR, 'registry.json')
 
@@ -46,8 +52,21 @@ export const PROJECT_PORT_END = Number(process.env.PROJECT_PORT_END) || 5380
 /** Hard ceiling on how many dev servers may run at once. */
 export const MAX_RUNNING_SERVERS = Number(process.env.MAX_RUNNING_SERVERS) || 4
 
+/**
+ * Provider names that run on another provider's adapter and settings block.
+ * `pollinations` is the default provider (see LAUNCH-PLAN.md §8) and speaks the
+ * OpenAI-compatible protocol — its key and endpoint live in `settings.openai`,
+ * which the Settings UI's preset picker fills with the Pollinations base URL.
+ */
+export const PROVIDER_ALIASES = { pollinations: 'openai' }
+
+/** Canonical provider name: the adapter/settings block that serves it. */
+export function canonicalProvider(provider) {
+  return PROVIDER_ALIASES[provider] || provider
+}
+
 export const DEFAULT_SETTINGS = {
-  provider: 'openai',
+  provider: 'pollinations',
   anthropic: {
     apiKey: '',
     baseUrl: 'https://api.anthropic.com',
@@ -55,8 +74,8 @@ export const DEFAULT_SETTINGS = {
   },
   openai: {
     apiKey: '',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o',
+    baseUrl: 'https://gen.pollinations.ai/v1',
+    model: 'deepseek/deepseek-v4-flash',
   },
   /**
    * Optional OpenAI-compatible image endpoint (`POST {baseUrl}/images/generations`).
@@ -77,8 +96,63 @@ export const DEFAULT_SETTINGS = {
   },
 }
 
+/** Names a generated project is allowed to see. Everything else stays here. */
+const CHILD_ENV_NAMES = new Set([
+  // launching processes
+  'path', 'pathext', 'comspec', 'systemroot', 'windir', 'tmp', 'temp', 'tmpdir',
+  // home and identity, needed by npm, git and node
+  'home', 'userprofile', 'homedrive', 'homepath', 'userdomain', 'username',
+  'appdata', 'localappdata', 'programdata', 'programfiles', 'programfiles(x86)', 'programw6432',
+  // locale and terminal behaviour
+  'lang', 'lc_all', 'lc_ctype', 'tz', 'term', 'shell', 'user', 'display',
+  // lets the packaged app run real node scripts
+  'electron_run_as_node',
+])
+
+/** Proxy and trust-store settings: useless if stripped, and not secret-bearing. */
+const CHILD_ENV_EXTRA = new Set([
+  'http_proxy', 'https_proxy', 'no_proxy', 'all_proxy', 'ftp_proxy',
+  'ssl_cert_file', 'ssl_cert_dir', 'node_extra_ca_certs',
+])
+
+const CHILD_ENV_PREFIXES = ['npm_config_', 'corepack_', 'yarn_', 'pnpm_']
+
+/**
+ * Environment for anything a generated project runs — npm, `node` on a project
+ * script, the dev server, an MCP connector. Deny-by-default on purpose: the
+ * platform's own API keys, and every credential in the shell that started it,
+ * would otherwise be readable by code the model wrote or by a dependency's
+ * postinstall script. `NODE_OPTIONS` is excluded for the same reason — it can
+ * inject code into every child.
+ *
+ * `overrides` (the project's PORT, a connector's own env) is merged last, so
+ * secrets are supplied per project rather than inherited. Anything genuinely
+ * needed can be opted in: `LOVABLE_CHILD_ENV=FOO,BAR`.
+ */
+export function childEnv(overrides = {}) {
+  const optedIn = String(process.env.LOVABLE_CHILD_ENV || '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+
+  const safe = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined) continue
+    const lower = key.toLowerCase()
+    if (
+      CHILD_ENV_NAMES.has(lower)
+      || CHILD_ENV_EXTRA.has(lower)
+      || optedIn.includes(lower)
+      || CHILD_ENV_PREFIXES.some((prefix) => lower.startsWith(prefix))
+    ) {
+      safe[key] = value
+    }
+  }
+  return { ...safe, FORCE_COLOR: '0', ...overrides }
+}
+
 export async function ensureDataDirs() {
-  for (const dir of [DATA_DIR, PROJECTS_DIR, META_DIR]) {
+  for (const dir of [DATA_DIR, PROJECTS_DIR, META_DIR, TRASH_DIR]) {
     await mkdir(dir, { recursive: true })
   }
 }
@@ -163,24 +237,42 @@ export async function saveSettings(patch) {
 
 /** True when a secret came from the environment rather than settings.json. */
 export function keySource(settings, provider) {
-  const envKeys = provider === 'anthropic'
+  const canonical = canonicalProvider(provider)
+  const envKeys = canonical === 'anthropic'
     ? [process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_AUTH_TOKEN]
-    : provider === 'image'
+    : canonical === 'image'
       ? [process.env.IMAGE_API_KEY]
       : [process.env.OPENAI_API_KEY]
-  const configured = settings?.[provider]?.apiKey
+  const configured = settings?.[canonical]?.apiKey
   if (!configured) return 'none'
   return envKeys.some((key) => key && key === configured) ? 'environment' : 'settings'
 }
 
 /** Presets offered in the Settings UI for OpenAI-compatible endpoints. */
 export const OPENAI_COMPATIBLE_PRESETS = [
+  // Preferred: one OpenAI-compatible endpoint over 250+ models, and the only one
+  // with a developer app-key scheme (see LAUNCH-PLAN.md §8). Model ids are
+  // namespaced — `deepseek/deepseek-v4-flash`, not `deepseek`.
+  { id: 'pollinations', label: 'Pollinations.ai', baseUrl: 'https://gen.pollinations.ai/v1', model: 'deepseek/deepseek-v4-flash' },
   { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o' },
   { id: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.5' },
   { id: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
   { id: 'together', label: 'Together AI', baseUrl: 'https://api.together.xyz/v1', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
   { id: 'azure', label: 'Azure OpenAI', baseUrl: 'https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT', model: 'gpt-4o' },
   { id: 'custom', label: 'Custom endpoint', baseUrl: '', model: '' },
+]
+
+/**
+ * Models worth naming in the UI for the Pollinations preset, cheapest first.
+ * Verified against `GET https://gen.pollinations.ai/v1/models`.
+ */
+export const POLLINATIONS_MODEL_CHOICES = [
+  { id: 'deepseek/deepseek-v4-flash', label: 'DeepSeek V4 Flash · cheapest capable, 1M context' },
+  { id: 'minimax/minimax-m3', label: 'MiniMax M3 · strong agentic value' },
+  { id: 'z-ai/glm-5.3', label: 'GLM 5.3 · well regarded for coding' },
+  { id: 'moonshotai/kimi-k2.7-code', label: 'Kimi K2.7 Code · code-tuned, pricier' },
+  { id: 'qwen/qwen3-coder-next', label: 'Qwen3 Coder Next · large code context' },
+  { id: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini · fast drafts and plan mode' },
 ]
 
 /** Sizes offered in the Settings UI for the image model. */

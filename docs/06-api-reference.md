@@ -26,20 +26,37 @@ an unmatched `/api/` path produces `404 { error: "No route for METHOD /path" }`.
 {
   "ok": true,
   "version": "0.2.0",
-  "productId": "codewoxy-lovable-local",
-  "product": "Lovable Local",
+  "productId": "codewoxy-stillworks",
+  "product": "Stillworks",
   "company": "CodeWoxy",
   "repository": "https://github.com/aminahmad2009/lovable-clone",
   "root": "D:\\test-projects\\lovable",
   "dataDir": "D:\\test-projects\\lovable\\data",
   "projects": 3,
   "running": 1,
+  "prerequisites": {
+    "git": { "ok": true, "command": "git", "version": "git version 2.50.1" },
+    "npm": { "ok": true, "command": "npm.cmd", "version": "10.9.2" }
+  },
+  "registry": { "understoodVersion": 1, "readOnly": null },
   "provider": "openai",
   "providerReady": true,
   "imageReady": true,
   "imageModel": "flux-1-schnell"
 }
 ```
+
+`prerequisites` is probed **once at boot** (spawning `git`/`npm` on every poll would cost more than it
+tells you) and drives the amber banner on the home grid when a tool is missing. `registry.readOnly` is
+non-null when `registry.json` was written by a newer build — the app keeps reading it and refuses to
+write it, so an old build can never downgrade a new install's project list.
+
+`GET /api/diagnostics` — one JSON file describing the install, sent with
+`content-disposition: attachment` so the browser downloads it. Contains app identity and paths, OS and
+Node versions, a **fresh** prerequisite probe, the full registry, running-server log tails, per-project
+git dirtiness, and the settings block. Every `apiKey` is masked by the same `publicSettings()` the
+panel uses, so the file is safe to email; it is still opt-in, reached from **Settings → Download
+diagnostics**.
 
 `GET /api/settings` — each provider block carries `apiKey` (masked as `••••••••` when set, empty
 otherwise), `hasKey`, and `keySource` (`settings` \| `environment` \| `none`).
@@ -51,7 +68,7 @@ value never destroys the real key.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/templates` | Scaffold choices: `react-vite`, `vue-vite`. |
+| GET | `/api/templates` | Scaffold choices: `react-vite`, `vue-vite`. Filtered against the folders in `server/templates/`, so a template can never be offered before it is installed. |
 | GET | `/api/designs` | Built-in design presets. |
 | GET | `/api/skills` | Built-in skills first, then user skills. |
 | POST | `/api/skills` | Create a user skill → `201`. Requires `name` and `brief` (else 400). |
@@ -65,15 +82,30 @@ injected into the system prompt when the skill is enabled.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/projects` | All projects with live dev-server state, plus running servers and orphan directories. |
+| GET | `/api/projects` | All projects with live dev-server state, plus running servers, orphan folders and trash contents. |
 | POST | `/api/projects` | `{ name, template? }` → scaffold, git init, port assignment → `201`. |
 | POST | `/api/projects/import` | `{ dir, name? }` → adopt an existing folder in place (git initialised if missing) → `201`. |
 | GET | `/api/projects/:id` | One project with runtime state. |
 | PATCH | `/api/projects/:id` | `{ name }` → rename. |
-| DELETE | `/api/projects/:id` | Stop the server, abort any turn, delete the folder and record. |
+| DELETE | `/api/projects/:id` | Stop the server, abort any turn, drop the record and its chat history. `?files=1` also moves the folder to `data/.trash/`; the response says which happened. |
+| PUT | `/api/projects/:id/remote` | `{ url }` → set `origin`. Only `https://`, `ssh://`, `file://` and `git@…` are accepted. |
+| POST | `/api/projects/:id/push` | Push the current branch to `origin`. 400 when no remote is set. |
 | PUT | `/api/projects/:id/design` | `{ designId \| null }` → assign a design preset. Unknown id → 400. |
 | PUT | `/api/projects/:id/skills` | `{ skillIds: [] }` → replace the enabled set (deduplicated). |
 | GET | `/api/projects/:id/status` | Runtime state plus `agentRunning`. |
+
+### Leftover folders
+
+`GET /api/projects` reports folders under `data/projects/` that no registry entry
+points at (`orphans`, each `{ slug, path, updatedAt }`) and what currently sits in
+`data/.trash/` (`trash`, each `{ name, path, deletedAt }`).
+
+| Method | Path | Purpose |
+|---|---|---|
+| DELETE | `/api/orphans/:slug` | Move one leftover folder to the trash. Refuses a name that resolves outside `data/projects/`, or to a folder a listed project owns. |
+| POST | `/api/trash/empty` | Delete every folder in the trash. The one irreversible call. |
+
+Adopting a leftover folder is `POST /api/projects/import` with its `path`.
 
 A public project record looks like:
 
@@ -111,7 +143,7 @@ A public project record looks like:
 | POST | `/api/projects/:id/restore?` | `{ ref }` → hard-restore the working tree to a commit. |
 | POST | `/api/projects/:id/revert` | Discard uncommitted changes. |
 | POST | `/api/projects/:id/typecheck` | Run `npm run typecheck`, stream output as `log` events, emit `typecheck:done`. |
-| GET | `/api/projects/:id/export` | The project as a `application/zip` download. |
+| GET | `/api/projects/:id/export` | The project as a `application/zip` download. Skips `node_modules`, `.git`, build output, and every `.env` file except `.env.example`. |
 
 ## Chat and history
 

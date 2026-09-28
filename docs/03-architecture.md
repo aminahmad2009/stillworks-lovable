@@ -41,6 +41,7 @@ module-evaluation time.
 | `server/devserver.js` | ~350 | Per-project child process lifecycle, port probing, log ring buffer, build-error detection, the event `bus` and `emit()`. |
 | `server/agent.js` | ~510 | The turn loop, system prompt assembly, retry policy, tool dispatch, self-healing, commit step, terminal-event contract. |
 | `server/tools.js` | ~390 | Tool definitions and handlers, path-escape guard, command allowlist, image tool. |
+| `server/prereqs.js` | ~50 | One-shot `git`/`npm` probe with human-readable results for health, boot log and the panel banner. |
 | `server/files.js` | ~170 | Tree listing, file read/write for the editor, regex search. |
 | `server/git.js` | ~120 | `status`, `log`, `diff`, `show`, `restore`, `commit -A`, discard. |
 | `server/designs.js` | ~145 | Built-in design preset catalogue and per-design prompt briefs. |
@@ -91,14 +92,25 @@ data/
 ├── settings.json          provider keys, base URLs, models, image config, agent flags
 ├── registry.json          project records: id, name, slug, path, port, template,
 │                          designId, skillIds, usage totals, timestamps
+├── registry.json.bak      mirror of the last complete registry write
 ├── skills.json            user-defined skills (built-ins live in code)
 ├── meta/<project-id>/
 │   └── history.json       { messages: [...], updatedAt } — capped at the last 400
-└── projects/<slug>/       the actual app, with its own .git
+├── projects/<slug>/       the actual app, with its own .git
+└── .trash/<slug>-<iso>/   folders a removal gave up on; cleared only by "Empty trash"
 ```
 
 Writes go through `writeJsonAtomic` (write to a temp file, then `rename`) so a crash mid-write cannot
-corrupt a registry or settings file.
+corrupt a registry or settings file. Every registry write then mirrors the result to
+`registry.json.bak`, and a `registry.json` that exists but will not parse is recovered from that mirror
+on the next read rather than booting with an empty project list.
+
+Removing a project never deletes its folder by itself: the registry entry and `meta/<id>/` go, and the
+working directory moves to `.trash/` only when removal is asked to take files.
+
+A `registry.json` whose `version` is higher than the running build understands is kept **read-only**:
+reads continue so the owner can upgrade, but every write throws instead of rewriting the file in an
+older shape.
 
 Project records are keyed by a UUID; the slug is only for humans and for the folder name. Routes
 accept either form and resolve through `getProject(idOrSlug)`.

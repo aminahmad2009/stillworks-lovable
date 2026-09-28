@@ -6,7 +6,7 @@ no dependencies. Layout: **sidebar** (projects) · **main** (preview / code / hi
 
 ## Sidebar
 
-- **Brand** — `Lovable Local`, `by CodeWoxy · single-user · on-device`.
+- **Brand** — `Stillworks`, `by CodeWoxy · single-user · on-device`.
 - **New project** — modal with a name and template choice (React or Vue). The folder is created under
   `data/projects/` with its own git repo and a reserved port.
 - **Import folder…** — adopts an existing Vite project *in place*; nothing is copied. Git is
@@ -30,15 +30,24 @@ each time it opens, so it always describes the running build.
 ## Home
 
 The empty state: a headline, a create-project form, and a grid of project cards (status dot, slug and
-port, last update). Creating from here behaves exactly like the sidebar modal.
+port, last update). Creating from here behaves exactly like the sidebar modal. Each card carries
+**Open**, **Rename** (display name only — the slug and folder never move) and **Remove**.
+
+Below the grid, a leftovers panel appears only when there is something to report: folders under
+`data/projects/` that no list entry points at, each with **Adopt** (register it in place) and **Move
+to trash**, and a **Trash** group listing what is waiting there with **Empty trash** for the permanent
+step.
+
+An amber banner above the grid states any startup blocker in plain words — `git` or `npm` missing from
+PATH, or a `registry.json` written by a newer build — rather than letting the first scaffold fail.
 
 ## Workspace header
 
 Project name; status pill; port; cumulative tokens for the project; the project path. Then tabs and
 actions:
 
+- **← Projects** — back to the home grid. The dev server keeps running; nothing is torn down.
 - **Typecheck** — runs `npm run typecheck`, streams output to Logs, toasts pass/fail.
-- **Export** — downloads the project as a zip.
 - **Restart** / **Stop** — dev-server control.
 - **Open ↗** — the preview in a real browser tab (in Electron this goes to the system browser rather
   than a bare child window).
@@ -56,7 +65,9 @@ lights up when errors arrive while you are on another tab.
 
 File tree on the left (with a refresh button), editor on the right. The tree hides `node_modules`,
 `.git`, `dist` and friends. A search box runs a project-wide regex and lists `path:line` hits;
-clicking one opens that file.
+clicking one opens that file. Beneath the tree sit **Export ZIP** — the project as a zip, minus
+`node_modules`, `.git` and `dist` — and **Remove project…**, which removes the current project from
+the list without leaving the workspace.
 
 The editor is a plain textarea with an "unsaved" indicator and a Save button (`PUT …/file`). Saving
 emits `file:written`, which the preview picks up through Vite's own HMR.
@@ -66,6 +77,10 @@ emits `file:written`, which the preview picks up through Vite's own HMR.
 Commits on the left, diffs on the right. Selecting a commit shows its diff; **Working tree** shows
 uncommitted changes. **Restore commit** hard-restores the tree to the selected commit (with a confirm
 dialog). This is the rollback path for a bad turn.
+
+Under the commit list a remote row reports where `origin` points. **Set remote** stores one (`https://`,
+`ssh://`, `file://` or `git@…`) and **Push** sends the current branch to it; with no remote the row reads
+*no remote*, Push stays disabled and the history exists only on this machine.
 
 ## Logs
 
@@ -111,6 +126,15 @@ URL and model, plus API key, base URL and model. The Anthropic block has the sam
 Key fields are blank on open with a placeholder telling you whether a key is already stored —
 leaving them blank keeps the existing key.
 
+The preset list leads with **Pollinations.ai** (`https://gen.pollinations.ai/v1`, default model
+`deepseek/deepseek-v4-flash`), then OpenAI, OpenRouter, Groq, Together AI, Azure and a blank custom
+endpoint.
+
+In the modal footer, **Download diagnostics** saves a single JSON file describing the install — app
+identity and paths, OS and Node versions, the git/npm probe, the registry, running-server log tails and
+the settings block with every key masked. It is the attachment for a support request; nothing else
+about this app leaves the machine.
+
 **Image model** block: optional key (blank reuses the text provider's), optional base URL (blank
 reuses the text provider's), model name, and a default size dropdown. A one-line status says whether
 an image capability is active and which endpoint it resolved to.
@@ -128,5 +152,8 @@ environment variables that are also read.
 ## Toasts and confirmations
 
 Transient toasts (bottom-right) report success and failure of discrete actions. Destructive actions —
-deleting a project, deleting a skill, restoring a commit, reverting the working tree — go through a
-confirm dialog that states exactly what will be removed.
+removing a project, deleting a skill, restoring a commit, reverting the working tree — go through a
+confirm dialog that states exactly what will be removed. Removing a project is offered from the home
+cards and from **Remove project…** under **Export ZIP** in the Files sidebar; both unregister the
+project and stop its dev server, and only move the folder to `data/.trash/` when the dialog's checkbox
+is ticked. Emptying the trash is the one action with no way back, and says so.

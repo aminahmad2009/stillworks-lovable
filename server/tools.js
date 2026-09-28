@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { readFile, writeFile, mkdir, rm, readdir, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { generateImage } from './llm/image.js'
+import { childEnv } from './config.js'
 
 const IS_WINDOWS = process.platform === 'win32'
 const MAX_READ_BYTES = 400_000
@@ -25,6 +26,13 @@ const COMMAND_ALLOWLIST = [
   /^pnpm\s+(install|add|run|list)\b/i,
   /^yarn\s+(install|add|run|list)\b/i,
 ]
+
+// The command runs through a shell, so a match at the start proves nothing about
+// what follows: every `;`, `&`, `|` or newline-separated segment is checked too.
+const SEGMENT_SPLIT = /[;&|\n]+/
+// Substitution and redirection bypass segmentation entirely, and `>` could write
+// outside the project where the file tools cannot.
+const UNSAFE_SHELL = /`|\$\(|[<>]/
 
 export function resolveInside(root, candidate) {
   const resolved = path.resolve(root, candidate || '.')
@@ -228,16 +236,31 @@ async function imageGenerationTool(root, args, ctx = {}) {
   ].join('\n')
 }
 
-function runCommand(root, args, onLog) {  if (!args.command || typeof args.command !== 'string') {
+/** The first segment a command runs that the allowlist does not cover, or null. */
+export function findUnpermitted(command) {
+  if (UNSAFE_SHELL.test(command)) return command
+  for (const segment of command.split(SEGMENT_SPLIT)) {
+    const trimmed = segment.trim()
+    if (!trimmed) continue
+    if (!COMMAND_ALLOWLIST.some((re) => re.test(trimmed))) return trimmed
+  }
+  return null
+}
+
+function runCommand(root, args, onLog) {
+  if (!args.command || typeof args.command !== 'string') {
     return Promise.reject(new Error('command is required'))
   }
   const command = args.command.trim()
-  const allowed = COMMAND_ALLOWLIST.some((re) => re.test(command))
-  if (!allowed) {
+  const unpermitted = findUnpermitted(command)
+  if (unpermitted) {
     return Promise.resolve(
-      `Refused: "${command}" is not on the allowlist. Permitted commands are npm/npx/pnpm/yarn ` +
-      `package and script operations, node on a project script, tsc, and read-mostly git. ` +
-      `Ask the user to run anything else themselves.`,
+      `Refused: "${command}" is not on the allowlist${unpermitted === command ? '' : ` ("${unpermitted}" is not)`}. ` +
+      `Permitted commands are npm/npx/pnpm/yarn package and script operations, node on a project script, ` +
+      `tsc, and read-mostly git — one command per call, without chaining, substitution or redirection. ` +
+      `If this was mkdir: write_file and edit_file create every missing parent directory themselves, ` +
+      `so write the files inside the new folders directly and keep going. ` +
+      `Anything else genuinely needs the shell — tell the user to run it themselves.`,
     )
   }
 
@@ -245,7 +268,7 @@ function runCommand(root, args, onLog) {  if (!args.command || typeof args.comma
     const child = spawn(command, {
       cwd: root,
       shell: true,
-      env: { ...process.env, FORCE_COLOR: '0' },
+      env: childEnv(),
       windowsHide: true,
     })
 
@@ -360,7 +383,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'run_command',
-    description: 'Run an allowlisted shell command in the project root (npm install, npm run build, npx tsc, git status, …). Use it to install dependencies and to verify the build compiles.',
+    description: 'Run an allowlisted shell command in the project root (npm install, npm run build, npx tsc, git status, …). Use it to install dependencies and to verify the build compiles. Not needed to create folders: write_file and edit_file create parent directories on their own, and mkdir is not on the allowlist.',
     input_schema: {
       type: 'object',
       properties: { command: { type: 'string', description: 'The command to run.' } },
@@ -383,6 +406,11 @@ const HANDLERS = {
 export async function executeTool(name, args, ctx = {}) {
   const { root, onLog } = ctx
   try {
+    // Dispatch to an MCP server if the tool name is qualified.
+    if (name.startsWith('mcp__')) {
+      const { executeMcpTool } = await import('./mcp/manager.js')
+      return await executeMcpTool(name, args)
+    }
     if (name === 'run_command') return await runCommand(root, args || {}, onLog)
     const handler = HANDLERS[name]
     if (!handler) return `Unknown tool: ${name}`

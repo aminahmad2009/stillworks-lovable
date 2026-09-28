@@ -1,9 +1,9 @@
-# Lovable Local
+# Stillworks
 
-**Built by CodeWoxy** · product ID `codewoxy-lovable-local` · version `0.2.0` ·
+**Built by CodeWoxy** · product ID `codewoxy-stillworks` · version `0.2.0` ·
 [Changelog](CHANGELOG.md) · [Documentation](docs/README.md)
 
-A single-user, on-device clone of a prompt-to-app builder. You describe an app in a chat panel, an
+A single-user, on-device prompt-to-app studio. You describe an app in a chat panel, an
 agent edits real files in a real project on your disk, and a live preview updates as it works.
 Every project is an ordinary Vite + React + TypeScript + Tailwind app with its own git history —
 nothing here is a proprietary format.
@@ -16,12 +16,14 @@ want.
 Full documentation lives in [`docs/`](docs/README.md): overview, getting started, architecture, the
 agent loop and tool reference, providers and image generation, the HTTP/SSE API reference, the web UI
 guide, desktop packaging, versioning and releases, and troubleshooting. Release notes are in
-[`CHANGELOG.md`](CHANGELOG.md).
+[`CHANGELOG.md`](CHANGELOG.md). Draft legal documents (EULA, terms, privacy, refunds) are in
+[`legal/`](legal/README.md) and are **not legal advice** — see the checklist there before publishing.
 
 ## Quick start
 
 ```bash
 node server/index.js        # or: npm start
+npm test                    # registry suites against a throwaway data dir (no model calls)
 ```
 
 Then open <http://127.0.0.1:4310>. There is no install step for the platform itself — the server
@@ -65,11 +67,11 @@ it.
 ```bash
 npm install        # once — electron + electron-builder are devDependencies
 npm run desktop    # native window with the server running in-process
-npm run dist:win   # → release/Lovable Local-Setup-0.2.0.exe
+npm run dist:win   # → release/Stillworks-Setup-0.2.0.exe
 ```
 
 The packaged app is tray-resident (closing hides it), has no native menubar, and stores its data in
-`%APPDATA%/Lovable Local/data` rather than the install directory. See
+`%APPDATA%/Stillworks/data` rather than the install directory. See
 [docs/08-desktop-and-packaging.md](docs/08-desktop-and-packaging.md).
 
 ## What a turn looks like
@@ -87,20 +89,36 @@ The packaged app is tray-resident (closing hides it), has no native menubar, and
 ## Multi-project model
 
 Each project lives in `data/projects/<slug>/` with its own git repo and its own dev server on a
-reserved port (5180 by default, allocated upward). Duplicate names get `-2`, `-3` suffixes.
+reserved port (5180 by default, allocated upward). Duplicate names get `-2`, `-3` suffixes — and a
+folder left behind by a removal still counts as that name, so nothing is ever written into it.
 Servers are started on demand and evicted least-recently-used when more than
 `MAX_RUNNING_SERVERS` (default 4) would run at once. The registry survives restarts; servers do
 not auto-start.
+
+Removing a project unregisters it, stops its server and drops its chat history, but leaves the folder
+alone. Tick the box in the same dialog to move that folder to `data/.trash/`; only **Empty trash**
+deletes for good. Folders the registry no longer points at are listed on the home grid, where you can
+adopt one back or throw it away.
+
+Every project is an ordinary git repository, so `Set remote` + `Push` in the History tab sends its
+history to a remote you own. That is the only sync on offer — there is still no hosted publishing.
 
 ## Safety model
 
 The agent has full read/write access **inside its project directory only** — every file tool
 resolves paths against the project root and refuses escapes. The shell is the exception and is
 allowlisted: package-manager commands, `node` on project scripts, `tsc`, and read-mostly git.
-Anything else is refused and reported back to the model. The preview iframe is sandboxed with
-`allow-scripts allow-same-origin`, which is required for HMR and `localStorage` in generated apps
-but means generated code runs with its own origin's privileges — acceptable for local use, worth
-knowing about.
+Anything else is refused and reported back to the model. Since the command string goes to a shell,
+every `;`/`&`/`|`-separated segment is checked and substitution or redirection is refused outright — a
+permitted prefix cannot smuggle an unpermitted command.
+
+Project processes do not inherit this server's environment. `npm install`, `node` on a project script,
+the dev server and MCP connectors get a scrubbed set (`PATH`, home and temp dirs, locale, proxy/CA
+config, `npm_config_*`), so neither generated code nor a dependency's postinstall script can read your
+API keys; opt a name back in with `LOVABLE_CHILD_ENV`. Export ZIPs skip `.env` and `.env.*` for the
+same reason. The preview iframe is sandboxed with `allow-scripts allow-same-origin`, which is required
+for HMR and `localStorage` in generated apps but means generated code runs with its own origin's
+privileges — acceptable for local use, worth knowing about.
 
 ## Layout
 
@@ -121,16 +139,18 @@ server/
   llm/           provider adapters: openai.js, anthropic.js, image.js, mock.js, shared SSE parser
   templates/     the react-vite and vue-vite starters copied into new projects
 web/             the control panel: index.html, styles.css, app.js (no build step)
+tests/           node:test suites over the registry (data dirs are throwaway, no tokens spent)
 electron/        main.js + preload.cjs — tray-resident desktop wrapper running the server in-process
 build/           icon.png for the packaged app
 docs/            the detailed documentation set (see docs/README.md)
-data/            runtime state: projects/, meta/, registry.json, skills.json, settings.json (git-ignored)
+data/            runtime state: projects/, meta/, .trash/, registry.json (+ .bak mirror),
+                 skills.json, settings.json (git-ignored)
 CHANGELOG.md     release notes, Keep a Changelog format
 ```
 
 ## What this is not
 
-Compared with the hosted product it imitates, there is no credit metering, no team permissions,
+Compared with a hosted builder, there is no credit metering, no team permissions,
 no database/auth integration wizard, no one-click public deployment, and no native mobile target.
 The agent's quality is exactly the quality of the model you point it at — the platform supplies
 the loop, the sandbox and the feedback, not the intelligence.

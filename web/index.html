@@ -3,7 +3,73 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Lovable Local · CodeWoxy</title>
+
+    <!--
+      Identity, icons and crawler metadata. None of this renders inside the app:
+      the layout, copy and behaviour of the panel are untouched by it.
+      Icons are generated from build/icon.png — see build/make-icons.ps1.
+    -->
+    <title>Stillworks · CodeWoxy</title>
+    <meta name="description" content="Describe an app in chat; an agent edits real files in a real Vite project on your disk, with live preview, git history and your own model key." />
+    <meta name="application-name" content="Stillworks" />
+    <meta name="author" content="CodeWoxy" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0b0f" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f6f8" />
+
+    <link rel="icon" href="/icons/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!--
+      og:url is deliberately absent: the panel is served from an arbitrary
+      localhost port, so a hard-coded origin would be wrong. Crawlers fall back
+      to the requested URL. Add absolute og:url/og:image values if you ever
+      publish this behind a public host.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Stillworks" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="Stillworks — the prompt-to-app studio that never leaves your machine" />
+    <meta property="og:description" content="One machine, one user, as many projects as you want. Every project is an ordinary Vite + React + TypeScript + Tailwind app with its own git history — nothing is a proprietary format." />
+    <meta property="og:image" content="/icons/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Stillworks: describe an app in chat and the agent edits real files in a real Vite project on your disk." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Stillworks" />
+    <meta name="twitter:description" content="A single-user, on-device prompt-to-app studio: real files, live preview, git history, your own model key." />
+    <meta name="twitter:image" content="/icons/og-image.png" />
+    <meta name="twitter:image:alt" content="Stillworks product icon and one-line description." />
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Stillworks",
+      "alternateName": "stillworks",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Windows, macOS, Linux",
+      "softwareVersion": "0.2.0",
+      "description": "A single-user, on-device prompt-to-app studio. Describe an app in a chat panel, an agent edits real files in a real project on your disk, and a live preview updates as it works.",
+      "image": "/icons/og-image.png",
+      "author": { "@type": "Organization", "name": "CodeWoxy" },
+      "publisher": { "@type": "Organization", "name": "CodeWoxy" },
+      "codeRepository": "https://github.com/aminahmad2009/lovable-clone",
+      "featureList": [
+        "Multi-project registry with a dev server per project",
+        "Agent file tools inside a sandboxed project directory",
+        "Live preview that reports build errors back to the agent",
+        "Per-project git history, diffs and rollback",
+        "Bring your own OpenAI-compatible or Anthropic model key"
+      ]
+    }
+    </script>
+
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -13,7 +79,7 @@
         <div class="brand">
           <span class="brand-mark">♥</span>
           <div class="brand-text">
-            <strong>Lovable Local</strong>
+            <strong>Stillworks</strong>
             <small>by CodeWoxy · single-user · on-device</small>
           </div>
         </div>
@@ -57,7 +123,11 @@
               <button class="btn btn-primary" type="submit">Create project</button>
             </form>
 
+            <div id="prereq-banner" class="prereq-banner" hidden></div>
+
             <div id="home-grid" class="project-grid"></div>
+
+            <div id="home-leftovers" class="home-leftovers" hidden></div>
           </div>
         </section>
 
@@ -75,18 +145,20 @@
             </div>
 
             <nav class="tabs" id="tabs">
-              <button class="tab active" data-view="preview">Preview</button>
-              <button class="tab" data-view="code">Code</button>
-              <button class="tab" data-view="history">History</button>
-              <button class="tab" data-view="logs">Logs <span id="log-badge" class="badge" hidden></span></button>
+              <button class="tab active" data-view="preview"><span class="tab-icon">🌐</span><span>Preview</span></button>
+              <button class="tab" data-view="code"><span class="tab-icon">📄</span><span>Files</span></button>
+              <button class="tab" data-view="history"><span class="tab-icon">🕐</span><span>History</span></button>
+              <button class="tab" data-view="logs"><span class="tab-icon">≣</span><span>Logs</span> <span id="log-badge" class="badge" hidden></span></button>
             </nav>
 
             <div class="topbar-actions">
-              <button id="btn-typecheck" class="btn btn-ghost btn-sm" title="Run the project's typecheck">Typecheck</button>
-              <button id="btn-export" class="btn btn-ghost btn-sm" title="Download the project as a .zip">Export</button>
-              <button id="btn-restart" class="btn btn-ghost btn-sm" title="Restart dev server">Restart</button>
-              <button id="btn-stop" class="btn btn-ghost btn-sm" title="Stop dev server">Stop</button>
-              <a id="btn-open" class="btn btn-ghost btn-sm" target="_blank" rel="noreferrer">Open ↗</a>
+              <button id="btn-all-projects" class="btn btn-ghost btn-sm" title="Back to the project list">← Projects</button>
+              <div class="action-group">
+                <button id="btn-typecheck" class="btn btn-ghost btn-sm" title="Run the project's typecheck">Typecheck</button>
+                <button id="btn-restart" class="btn btn-ghost btn-sm" title="Restart dev server">Restart</button>
+                <button id="btn-stop" class="btn btn-ghost btn-sm" title="Stop dev server">Stop</button>
+                <a id="btn-open" class="btn btn-ghost btn-sm" target="_blank" rel="noreferrer">Open ↗</a>
+              </div>
             </div>
           </header>
 
@@ -94,15 +166,19 @@
           <div class="view" id="view-preview">
             <div class="preview-toolbar">
               <div class="device-widths">
-                <button class="chip" data-width="375">Mobile</button>
+                <button class="chip" data-width="425">Mobile</button>
                 <button class="chip" data-width="768">Tablet</button>
-                <button class="chip active" data-width="0">Full</button>
+                <button class="chip" data-width="1440">Laptop</button>
+                <button class="chip active" data-width="2560">Full</button>
               </div>
               <div class="preview-url mono" id="preview-url"></div>
-              <button id="btn-reload" class="btn btn-ghost btn-sm">Reload</button>
+              <button id="btn-reload" class="btn btn-ghost btn-sm pill-btn">Reload</button>
+              <button id="btn-select" class="btn btn-ghost btn-sm pill-btn select-trigger" title="Select an element in the preview to reference it in chat">
+                <span>🎯</span><span class="dt-name">Select</span>
+              </button>
             </div>
             <div class="preview-stage" id="preview-stage">
-              <iframe id="preview-frame" title="App preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
+              <iframe id="preview-frame" title="App preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"></iframe>
               <div class="preview-overlay" id="preview-overlay">
                 <div class="preview-overlay-inner">
                   <div class="spinner"></div>
@@ -128,6 +204,10 @@
                 </div>
                 <div id="search-results" class="search-results" hidden></div>
                 <div id="file-tree" class="file-tree"></div>
+                <div class="file-tree-actions">
+                  <button id="btn-export-code" class="btn btn-ghost btn-sm" title="Download the project as a .zip">Export ZIP</button>
+                  <button id="btn-remove-project" class="btn btn-ghost btn-sm" title="Remove this project from the list">Remove project…</button>
+                </div>
               </div>
               <div class="editor-pane">
                 <div class="editor-bar">
@@ -147,6 +227,13 @@
               <div class="commit-pane">
                 <div class="pane-label">Commits</div>
                 <div id="commit-list" class="commit-list"></div>
+                <div class="push-row">
+                  <div class="push-row-actions">
+                    <button id="btn-set-remote" class="btn btn-ghost btn-xs">Set remote</button>
+                    <button id="btn-push" class="btn btn-ghost btn-xs" disabled title="Push the history to origin">Push</button>
+                  </div>
+                  <span id="push-state" class="muted small mono">no remote</span>
+                </div>
               </div>
               <div class="diff-pane">
                 <div class="pane-label">
@@ -175,18 +262,15 @@
       <!-- ============================== chat ============================== -->
       <aside id="chat">
         <header class="chat-header">
-          <div class="mode-switch" role="tablist" aria-label="Agent mode">
-            <button class="mode-btn" data-mode="plan" role="tab">Plan</button>
-            <button class="mode-btn active" data-mode="agent" role="tab">Agent</button>
-          </div>
+          <div class="chat-header-title">Assistant</div>
           <div class="chat-header-actions">
-            <button id="btn-design" class="btn btn-ghost btn-sm design-trigger" title="Pick a design style">
-              <span>🎨</span><span class="dt-name">Design</span>
-            </button>
             <button id="btn-skills" class="btn btn-ghost btn-sm design-trigger" title="Enable skills for this project">
               <span>🧩</span><span class="dt-name">Skills</span>
             </button>
-            <button id="btn-abort" class="btn btn-danger btn-sm" hidden>Stop</button>
+            <button id="btn-connectors" class="btn btn-ghost btn-sm design-trigger" title="Connect external services">
+              <span>🔌</span><span class="dt-name">Connectors</span>
+            </button>
+            <button id="btn-abort" class="btn btn-danger btn-sm icon-btn" hidden title="Stop the running turn">⏹</button>
             <button id="btn-clear-chat" class="btn btn-ghost btn-sm" title="Clear conversation">Clear</button>
           </div>
         </header>
@@ -209,16 +293,30 @@
           </div>
         </div>
 
+        <div id="suggestion-bar" class="suggestion-bar" hidden></div>
+
         <form id="chat-form" class="chat-form">
           <div id="chat-images" class="chat-images" hidden></div>
-          <textarea id="chat-input" rows="3" placeholder="Describe what to build or change…" disabled></textarea>
+          <div id="element-ref" class="element-ref" hidden></div>
+          <div class="chat-input-wrapper">
+            <textarea id="chat-input" rows="3" placeholder="Describe what to build or change…" disabled maxlength="4000"></textarea>
+            <div class="chat-input-actions">
+              <button type="button" id="btn-attach" class="btn btn-ghost btn-xs" title="Attach reference images" disabled>+</button>
+              <input type="file" id="chat-file" accept="image/*" multiple hidden />
+              <div class="strategy-toggle" role="tablist" aria-label="Agent strategy">
+                <button type="button" class="strategy-btn" data-strategy="plan" role="tab">Plan</button>
+                <button type="button" class="strategy-btn active" data-strategy="agent" role="tab">Build</button>
+              </div>
+              <span class="spacer"></span>
+              <button id="chat-send" class="btn btn-primary btn-sm" type="submit" disabled>Send</button>
+            </div>
+          </div>
           <div class="chat-form-bar">
-            <button type="button" id="btn-attach" class="btn btn-ghost btn-sm" title="Attach reference images" disabled>🖼</button>
-            <input type="file" id="chat-file" accept="image/*" multiple hidden />
-            <span id="chat-hint" class="muted small">Select a project to start</span>
             <span class="spacer"></span>
+            <div class="usage-info">
+              <span id="context-window" class="muted small mono" title="Context window usage"></span>
+            </div>
             <span id="usage-label" class="muted small mono"></span>
-            <button id="chat-send" class="btn btn-primary btn-sm" type="submit" disabled>Send</button>
           </div>
         </form>
       </aside>
@@ -239,6 +337,16 @@
             <span>Template</span>
             <select id="modal-new-template"></select>
           </label>
+          <div class="field" id="color-scheme-step" hidden>
+            <span>Base color scheme</span>
+            <div class="radio-row" id="color-scheme-options">
+              <label><input type="radio" name="color-scheme" value="neutral" checked /> Neutral</label>
+              <label><input type="radio" name="color-scheme" value="blue" /> Blue</label>
+              <label><input type="radio" name="color-scheme" value="violet" /> Violet</label>
+              <label><input type="radio" name="color-scheme" value="emerald" /> Emerald</label>
+              <label><input type="radio" name="color-scheme" value="rose" /> Rose</label>
+            </div>
+          </div>
           <p class="muted small">
             A folder is created under <code class="mono">data/projects/</code> with a React + Vite +
             Tailwind starter, its own git repo, and a reserved dev-server port.
@@ -253,89 +361,150 @@
       <div class="modal modal-wide" id="modal-settings" hidden>
         <h3>Settings</h3>
 
-        <div class="field">
-          <span>Provider</span>
-          <div class="radio-row" id="settings-provider"></div>
+        <!-- Settings Tabs -->
+        <div class="settings-tabs" role="tablist">
+          <button type="button" class="settings-tab active" data-tab="general" role="tab">General Settings</button>
+          <button type="button" class="settings-tab" data-tab="text-gen" role="tab">Text</button>
+          <button type="button" class="settings-tab" data-tab="image-gen" role="tab">Image</button>
+          <button type="button" class="settings-tab" data-tab="personas" role="tab">Personas</button>
+          <button type="button" class="settings-tab" data-tab="mcp" role="tab">MCP</button>
         </div>
 
-        <div id="settings-openai" class="provider-block">
+        <!-- General Settings Tab -->
+        <div class="settings-tab-panel active" id="panel-general">
           <div class="field">
-            <span>Preset</span>
-            <select id="settings-preset"></select>
+            <span>Agent Behavior</span>
+            <div class="checkbox-row">
+              <label><input type="checkbox" id="settings-autoinstall" /> Auto-install when package.json changes</label>
+              <label><input type="checkbox" id="settings-autocommit" /> Auto-commit after each turn</label>
+              <label><input type="checkbox" id="settings-reviewcommit" /> Review changes before committing (approve or revert each turn)</label>
+            </div>
           </div>
           <label class="field">
-            <span>API key</span>
-            <input id="settings-openai-key" type="password" placeholder="sk-…" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span>Base URL</span>
-            <input id="settings-openai-base" type="text" placeholder="https://api.openai.com/v1" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span>Model</span>
-            <input id="settings-openai-model" type="text" placeholder="gpt-4o" autocomplete="off" />
+            <span>Max steps per turn <em id="settings-maxsteps-val" class="muted">24</em></span>
+            <input id="settings-maxsteps" type="range" min="4" max="60" step="2" />
           </label>
         </div>
 
-        <div id="settings-anthropic" class="provider-block" hidden>
-          <label class="field">
-            <span>API key</span>
-            <input id="settings-anthropic-key" type="password" placeholder="sk-ant-…" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span>Base URL</span>
-            <input id="settings-anthropic-base" type="text" placeholder="https://api.anthropic.com" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span>Model</span>
-            <input id="settings-anthropic-model" type="text" placeholder="claude-sonnet-4-5" autocomplete="off" />
-          </label>
-        </div>
-
-        <div id="settings-image" class="provider-block image-block">
+        <!-- Text Generation Tab -->
+        <div class="settings-tab-panel" id="panel-text-gen">
           <div class="field">
-            <span>Image model <em id="settings-image-state" class="muted"></em></span>
-            <p class="muted small" style="margin:2px 0 8px">
-              Optional. Any OpenAI-compatible endpoint that serves
-              <code class="mono">POST /images/generations</code>. Leave the base URL and key blank to
-              reuse the OpenAI-compatible text endpoint above. When nothing is configured the agent
-              falls back to the text endpoint and reports the failure in chat.
+            <span>Provider</span>
+            <div class="radio-row" id="settings-provider"></div>
+          </div>
+
+          <div id="settings-openai" class="provider-block">
+            <div class="field">
+              <span>Preset</span>
+              <select id="settings-preset"></select>
+            </div>
+            <label class="field">
+              <span>API key</span>
+              <input id="settings-openai-key" type="password" placeholder="sk-…" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Base URL</span>
+              <input id="settings-openai-base" type="text" placeholder="https://api.openai.com/v1" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Model</span>
+              <input id="settings-openai-model" type="text" placeholder="gpt-4o" autocomplete="off" />
+            </label>
+          </div>
+
+          <div id="settings-anthropic" class="provider-block" hidden>
+            <label class="field">
+              <span>API key</span>
+              <input id="settings-anthropic-key" type="password" placeholder="sk-ant-…" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Base URL</span>
+              <input id="settings-anthropic-base" type="text" placeholder="https://api.anthropic.com" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Model</span>
+              <input id="settings-anthropic-model" type="text" placeholder="claude-sonnet-4-5" autocomplete="off" />
+            </label>
+          </div>
+
+          <div class="panel-actions">
+            <button type="button" id="settings-test" class="btn btn-ghost btn-sm">Test connection</button>
+          </div>
+          <div id="settings-test-result" class="test-result" hidden></div>
+        </div>
+
+        <!-- Image Generation Tab -->
+        <div class="settings-tab-panel" id="panel-image-gen">
+          <div id="settings-image" class="provider-block image-block">
+            <div class="field">
+              <span>Image model <em id="settings-image-state" class="muted"></em></span>
+              <p class="muted small" style="margin:2px 0 8px">
+                Optional. Any OpenAI-compatible endpoint that serves
+                <code class="mono">POST /images/generations</code>. Leave the base URL and key blank to
+                reuse the OpenAI-compatible text endpoint. When nothing is configured the agent
+                falls back to the text endpoint and reports the failure in chat.
+              </p>
+            </div>
+            <label class="field">
+              <span>Image API key</span>
+              <input id="settings-image-key" type="password" placeholder="blank = reuse the text provider key" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Image base URL</span>
+              <input id="settings-image-base" type="text" placeholder="blank = reuse the text provider base URL" autocomplete="off" />
+            </label>
+            <div class="skill-edit-row">
+              <label class="field" style="flex:2">
+                <span>Image model name</span>
+                <input id="settings-image-model" type="text" placeholder="e.g. gpt-image-1, flux-1-schnell" autocomplete="off" />
+              </label>
+              <label class="field" style="flex:1">
+                <span>Default size</span>
+                <select id="settings-image-size"></select>
+              </label>
+            </div>
+            <div class="panel-actions">
+              <button type="button" id="settings-test-image" class="btn btn-ghost btn-sm" title="Generate a tiny test image">Test image model</button>
+            </div>
+            <div id="settings-image-result" class="test-result" hidden></div>
+          </div>
+        </div>
+
+        <!-- Personas Tab -->
+        <div class="settings-tab-panel" id="panel-personas">
+          <div class="field">
+            <span>System Persona</span>
+            <p class="muted small" style="margin:4px 0 8px">
+              Prepended to every LLM request. Defines the assistant's behavior, constraints, and expertise.
             </p>
+            <textarea id="settings-system-persona" rows="6" placeholder="You are an expert full-stack developer specializing in React, TypeScript, and modern web frameworks..."></textarea>
           </div>
-          <label class="field">
-            <span>Image API key</span>
-            <input id="settings-image-key" type="password" placeholder="blank = reuse the text provider key" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span>Image base URL</span>
-            <input id="settings-image-base" type="text" placeholder="blank = reuse the text provider base URL" autocomplete="off" />
-          </label>
-          <div class="skill-edit-row">
-            <label class="field" style="flex:2">
-              <span>Image model name</span>
-              <input id="settings-image-model" type="text" placeholder="e.g. gpt-image-1, flux-1-schnell" autocomplete="off" />
-            </label>
-            <label class="field" style="flex:1">
-              <span>Default size</span>
-              <select id="settings-image-size"></select>
-            </label>
+          <div class="field">
+            <span>Assistant Persona</span>
+            <p class="muted small" style="margin:4px 0 8px">
+              The first assistant message that sets tone and communication style.
+            </p>
+            <textarea id="settings-assistant-persona" rows="4" placeholder="I'll help you build this step by step. Let me start by analyzing the project structure..."></textarea>
           </div>
-          <div id="settings-image-result" class="test-result" hidden></div>
-        </div>
-
-        <div class="field">
-          <span>Agent</span>          <div class="checkbox-row">
-            <label><input type="checkbox" id="settings-autoinstall" /> Auto-install when package.json changes</label>
-            <label><input type="checkbox" id="settings-autocommit" /> Auto-commit after each turn</label>
-            <label><input type="checkbox" id="settings-reviewcommit" /> Review changes before committing (approve or revert each turn)</label>
+          <div class="field">
+            <button type="button" id="btn-reset-personas" class="btn btn-ghost btn-sm">Reset to Defaults</button>
           </div>
         </div>
-        <label class="field">
-          <span>Max steps per turn <em id="settings-maxsteps-val" class="muted">24</em></span>
-          <input id="settings-maxsteps" type="range" min="4" max="60" step="2" />
-        </label>
 
-        <div id="settings-test-result" class="test-result" hidden></div>
+        <!-- MCP Tab -->
+        <div class="settings-tab-panel" id="panel-mcp">
+          <div class="field mcp-section">
+            <span>MCP Servers</span>
+            <p class="muted small" style="margin:4px 0 10px">
+              Connect to Model Context Protocol servers for extended tool capabilities.
+              <a href="https://mcpservers.org/" target="_blank" rel="noopener">Browse catalog →</a>
+            </p>
+            <div id="mcp-server-list" class="mcp-server-list"></div>
+            <button type="button" id="btn-add-mcp" class="btn btn-ghost btn-sm">+ Add Server</button>
+            <button type="button" id="btn-browse-catalog" class="btn btn-ghost btn-sm">Browse Catalog</button>
+            <div id="mcp-test-result" class="test-result" hidden></div>
+          </div>
+        </div>
 
         <p class="muted small">
           Keys are stored in <code class="mono">data/settings.json</code> on this machine only.
@@ -346,19 +515,165 @@
         </p>
 
         <div class="modal-actions">
+          <button type="button" id="btn-diagnostics" class="btn btn-ghost" title="Download one redacted JSON file describing this install">Download diagnostics</button>
+          <span class="spacer"></span>
           <button type="button" class="btn btn-ghost" data-close>Close</button>
-          <button type="button" id="settings-test-image" class="btn btn-ghost" title="Generate a tiny test image">Test image model</button>
-          <button type="button" id="settings-test" class="btn btn-ghost">Test connection</button>
           <button type="button" id="settings-save" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+
+      <!-- Add MCP Server Modal -->
+      <div class="modal modal-wide" id="modal-add-mcp" hidden>
+        <h3>Add MCP Server</h3>
+        <form id="form-add-mcp">
+          <label class="field">
+            <span>Server name</span>
+            <input id="mcp-name" type="text" placeholder="e.g. filesystem, github, postgres" required />
+          </label>
+          <div class="field">
+            <span>Transport type</span>
+            <div class="radio-row" id="mcp-transport-type">
+              <label><input type="radio" name="transport" value="stdio" checked /> stdio (local)</label>
+              <label><input type="radio" name="transport" value="http" /> HTTP/SSE (remote)</label>
+            </div>
+          </div>
+          <div id="mcp-stdio-fields">
+            <label class="field">
+              <span>Command</span>
+              <select id="mcp-command">
+                <option value="npx">npx</option>
+                <option value="uvx">uvx</option>
+                <option value="node">node</option>
+                <option value="python">python</option>
+                <option value="deno">deno</option>
+                <option value="bun">bun</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Arguments (space-separated)</span>
+              <input id="mcp-args" type="text" placeholder="-y @modelcontextprotocol/server-filesystem /tmp" />
+            </label>
+          </div>
+          <div id="mcp-http-fields" hidden>
+            <label class="field">
+              <span>URL</span>
+              <input id="mcp-url" type="url" placeholder="https://example.com/mcp" />
+            </label>
+            <label class="field">
+              <span>Headers (JSON format, optional)</span>
+              <textarea id="mcp-headers" rows="3" placeholder='{"Authorization": "Bearer token"}'></textarea>
+            </label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+            <button type="submit" class="btn btn-primary">Add Server</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- MCP Catalog Browser Modal -->
+      <div class="modal modal-wide modal-tall" id="modal-mcp-catalog" hidden>
+        <h3>MCP Server Catalog</h3>
+        <p class="muted small" style="margin:4px 0 12px">
+          Browse servers from the official <a href="https://registry.modelcontextprotocol.io/" target="_blank" rel="noopener">MCP Registry</a>.
+          Click "Install" to add a server to your configuration.
+        </p>
+        <div class="field">
+          <input id="catalog-search" type="search" placeholder="Search catalog..." autocomplete="off" />
+        </div>
+        <div id="catalog-list" class="catalog-list"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close>Close</button>
+          <button type="button" id="btn-refresh-catalog" class="btn btn-ghost">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Connectors Modal -->
+      <div class="modal modal-wide modal-tall" id="modal-connectors" hidden>
+        <h3>Connectors</h3>
+        <p class="muted small" style="margin:4px 0 12px">
+          Connect your project to external services and APIs. Each connector provides tools the agent can use.
+        </p>
+        <div class="field">
+          <input id="connector-search" type="search" placeholder="Search connectors..." autocomplete="off" />
+        </div>
+        <div class="connector-categories">
+          <div class="category-group">
+            <span class="category-label">Version Control</span>
+            <div class="connector-list" id="connector-git">
+              <div class="connector-card" data-id="github">
+                <div class="connector-icon">🐙</div>
+                <div class="connector-info">
+                  <strong>GitHub</strong>
+                  <span class="connector-desc">Connect to GitHub repositories for PR creation, issue management, and code review</span>
+                </div>
+                <button class="btn btn-ghost btn-sm connector-toggle" data-connector="github">Connect</button>
+              </div>
+              <div class="connector-card" data-id="gitlab">
+                <div class="connector-icon">🦊</div>
+                <div class="connector-info">
+                  <strong>GitLab</strong>
+                  <span class="connector-desc">GitLab CI/CD pipelines, merge requests, and project management</span>
+                </div>
+                <button class="btn btn-ghost btn-sm connector-toggle" data-connector="gitlab">Connect</button>
+              </div>
+            </div>
+          </div>
+          <div class="category-group">
+            <span class="category-label">AI & ML</span>
+            <div class="connector-list" id="connector-ai">
+              <div class="connector-card" data-id="openai">
+                <div class="connector-icon">✳️</div>
+                <div class="connector-info">
+                  <strong>OpenAI</strong>
+                  <span class="connector-desc">GPT models for text generation, embeddings, and image creation</span>
+                </div>
+                <button class="btn btn-ghost btn-sm connector-toggle" data-connector="openai">Connect</button>
+              </div>
+            </div>
+          </div>
+          <div class="category-group">
+            <span class="category-label">Database</span>
+            <div class="connector-list" id="connector-db">
+              <div class="connector-card" data-id="supabase">
+                <div class="connector-icon">⚡</div>
+                <div class="connector-info">
+                  <strong>Supabase</strong>
+                  <span class="connector-desc">PostgreSQL database, authentication, real-time subscriptions, and storage</span>
+                </div>
+                <button class="btn btn-ghost btn-sm connector-toggle" data-connector="supabase">Connect</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close>Close</button>
         </div>
       </div>
 
       <div class="modal" id="modal-confirm" hidden>
         <h3 id="confirm-title">Are you sure?</h3>
         <p class="muted" id="confirm-body"></p>
+        <label class="confirm-check" id="confirm-check" hidden>
+          <input type="checkbox" id="confirm-check-input" />
+          <span id="confirm-check-label"></span>
+        </label>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" data-close>Cancel</button>
           <button type="button" id="confirm-ok" class="btn btn-danger">Confirm</button>
+        </div>
+      </div>
+
+      <div class="modal" id="modal-input" hidden>
+        <h3 id="input-title">Enter a value</h3>
+        <label class="field">
+          <span id="input-label">Value</span>
+          <input id="input-value" type="text" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="muted small" id="input-hint"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+          <button type="button" id="input-ok" class="btn btn-primary">Save</button>
         </div>
       </div>
 
@@ -384,14 +699,35 @@
           each turn.
         </p>
         <div class="skills-toolbar">
-          <input id="skill-search" class="design-search" type="text" placeholder="Search skills, tags…" autocomplete="off" />
+          <input id="skill-search" class="design-search" type="text" placeholder="Search your skills, or the factory…" autocomplete="off" />
           <button type="button" id="btn-add-skill" class="btn btn-primary btn-sm">+ Add skill</button>
         </div>
+        <div id="skill-list-heading" class="skill-section-heading" hidden>Your skills</div>
         <div id="skill-list" class="design-grid skill-list"></div>
+        <div id="skill-factory" class="skill-factory" hidden>
+          <div class="skill-section-heading">
+            <span>Skill factory</span>
+            <span id="skill-factory-meta" class="muted small"></span>
+          </div>
+          <div id="skill-factory-list" class="design-grid skill-list"></div>
+        </div>
         <div class="modal-actions">
           <span id="skills-enabled-count" class="muted small"></span>
           <span class="spacer"></span>
           <button type="button" class="btn btn-ghost" data-close>Close</button>
+        </div>
+      </div>
+
+      <div class="modal modal-wide" id="modal-skill-preview" hidden>
+        <h3 id="skill-preview-title">Skill</h3>
+        <p id="skill-preview-desc" class="muted small" style="margin:-10px 0 12px"></p>
+        <div id="skill-preview-tags" class="dc-tags" style="margin-bottom:10px"></div>
+        <pre id="skill-preview-brief" class="skill-preview-body"></pre>
+        <div class="modal-actions">
+          <span id="skill-preview-meta" class="muted small"></span>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-ghost" id="skill-preview-cancel">Back</button>
+          <button type="button" class="btn btn-primary" id="skill-preview-install">Download &amp; enable</button>
         </div>
       </div>
 
@@ -449,7 +785,7 @@
         </div>
       </div>
       <div class="modal" id="modal-about" hidden>
-        <h3 id="about-product">Lovable Local</h3>
+        <h3 id="about-product">Stillworks</h3>
         <p class="muted small" style="margin:-8px 0 14px">
           Built by <strong id="about-company">CodeWoxy</strong>. A single-user, on-device
           prompt-to-app builder: real files on disk, real dev servers, real git history.

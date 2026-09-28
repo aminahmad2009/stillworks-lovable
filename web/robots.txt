@@ -1,0 +1,8 @@
+# Lovable Local serves its control panel from 127.0.0.1, so nothing here is
+# reachable by a crawler unless you deliberately put it behind a public host.
+#
+# The panel has no authentication. If you ever do expose it, change the rule
+# below to "Disallow: /" first — an indexed control panel is an open one.
+
+User-agent: *
+Allow: /

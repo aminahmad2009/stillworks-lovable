@@ -1,6 +1,7 @@
 import { streamAnthropic } from './anthropic.js'
 import { streamOpenAi } from './openai.js'
 import { streamMock } from './mock.js'
+import { canonicalProvider } from '../config.js'
 
 const ADAPTERS = {
   openai: streamOpenAi,
@@ -9,17 +10,19 @@ const ADAPTERS = {
 }
 
 export function resolveProvider(settings, override) {
-  const requested = override || settings.provider || 'openai'
+  // Aliased names (e.g. `pollinations`) run on their canonical adapter.
+  const requested = canonicalProvider(override || settings.provider || 'openai')
   if (!ADAPTERS[requested]) {
-    throw new Error(`Unknown provider "${requested}". Supported: ${Object.keys(ADAPTERS).join(', ')}`)
+    throw new Error(`Unknown provider "${override || settings.provider}". Supported: ${Object.keys(ADAPTERS).join(', ')}`)
   }
   return requested
 }
 
 /** True when the chosen provider can actually be called. */
 export function providerReady(settings, provider) {
-  if (provider === 'mock') return true
-  return Boolean(settings?.[provider]?.apiKey)
+  const canonical = canonicalProvider(provider || settings?.provider)
+  if (canonical === 'mock') return true
+  return Boolean(settings?.[canonical]?.apiKey)
 }
 
 /**

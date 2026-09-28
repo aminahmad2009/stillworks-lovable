@@ -21,6 +21,11 @@ desktop.ini
 .idea/
 *.swp
 
+# Hand-made backups and scratch instances
+*.bak
+*.backup
+.tmp-*/
+
 # Environment files
 .env
 .env.local

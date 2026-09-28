@@ -1,10 +1,20 @@
-/* Lovable Local — control panel frontend. Zero dependencies, no build step. */
+/* Stillworks — control panel frontend. Zero dependencies, no build step. */
 
 const $ = (sel, root = document) => root.querySelector(sel)
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
 
+/** Default system and assistant personas */
+const DEFAULT_SYSTEM_PERSONA = `You are an expert full-stack developer specializing in React, TypeScript, Next.js, Vue, and modern web frameworks. You write clean, maintainable code following best practices. You understand component architecture, state management, API integration, and deployment strategies. When building projects, you create complete, working implementations rather than placeholders.`
+
+const DEFAULT_ASSISTANT_PERSONA = `I'll help you build this step by step. Let me analyze the requirements and project structure first, then implement the solution systematically.`
+
 const state = {
   projects: [],
+  /** Folders under data/projects/ with no registry entry, and data/.trash/. */
+  orphans: [],
+  trash: [],
+  /** Origin URL of the active project, when it has one. */
+  remote: null,
   activeId: null,
   settings: null,
   providers: null,
@@ -14,6 +24,13 @@ const state = {
   skills: [],
   skillFilter: '',
   editingSkillId: null,
+  /** Skill factory catalog, loaded the first time the search field is used. */
+  factory: null,
+  factoryOrigin: null,
+  factoryLoading: false,
+  factoryError: null,
+  factoryWarning: null,
+  previewFactoryId: null,
   templates: [],
   pendingImages: [],
   searchTimer: null,
@@ -29,8 +46,17 @@ const state = {
   selectedCommit: null,
   /** tool call id -> DOM element */
   toolNodes: new Map(),
+  /** steering queuedAt -> DOM element, so the badge can flip once delivered */
+  steerNodes: new Map(),
   currentAssistantEl: null,
   currentAssistantText: '',
+  /** bouncing-dots placeholder element shown while the agent spins up */
+  waitingEl: null,
+  /** text of the most recent completed assistant turn, for suggestion parsing */
+  lastAssistantText: '',
+  /** element-picking mode in the preview iframe */
+  selecting: false,
+  selectedElement: null,
   currentThinkingEl: null,
   currentThinkingText: '',
   thinkingStartedAt: 0,
@@ -93,12 +119,51 @@ function escapeHtml(text) {
   ))
 }
 
+/* ------------------------------ sliding pill ----------------------------- */
+
+/** Attach a sliding indicator to a tab-button group. */
+function initSlider(group) {
+  if (!group || group.querySelector('.tab-slider')) return
+  group.append(el('span', { class: 'tab-slider' }))
+  updateSlider(group)
+}
+
+/** Move the indicator onto the group's active button. */
+function updateSlider(group) {
+  if (!group) return
+  const slider = group.querySelector('.tab-slider')
+  const active = group.querySelector('.active')
+  if (!slider || !active) return
+  const hidden = active.offsetParent === null
+  slider.style.visibility = hidden ? 'hidden' : 'visible'
+  if (hidden) return
+  slider.style.left = `${active.offsetLeft}px`
+  slider.style.top = `${active.offsetTop}px`
+  slider.style.width = `${active.offsetWidth}px`
+  slider.style.height = `${active.offsetHeight}px`
+}
+
 function activeProject() {
   return state.projects.find((p) => p.id === state.activeId) || null
 }
 
+/** Compact token counts: 1234 -> "1.2K", 4500000 -> "4.5M". */
 function formatTokens(n) {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+  const value = Number(n) || 0
+  const abs = Math.abs(value)
+  if (abs >= 1e9) return `${trimZero(value / 1e9)}B`
+  if (abs >= 1e6) return `${trimZero(value / 1e6)}M`
+  if (abs >= 1e3) return `${trimZero(value / 1e3)}K`
+  return String(value)
+}
+
+function trimZero(value) {
+  return String(Number(value.toFixed(1)))
+}
+
+/** The exact figure, for tooltips under the compact label. */
+function exactTokens(n) {
+  return (Number(n) || 0).toLocaleString('en-US')
 }
 
 function timeAgo(ts) {
@@ -108,6 +173,42 @@ function timeAgo(ts) {
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`
   return `${Math.floor(secs / 86400)}d ago`
+}
+
+/* ------------------------------ file icons ------------------------------ */
+
+const FILE_ICONS = {
+  js: '🟨', mjs: '🟨', cjs: '🟨',
+  jsx: '⚛️', tsx: '⚛️',
+  ts: '🔷', d: '🔷',
+  vue: '🟢', svelte: '🧡',
+  css: '🎨', scss: '🎨', sass: '🎨', less: '🎨',
+  html: '🌐', htm: '🌐',
+  json: '🧩', jsonc: '🧩',
+  md: '📝', mdx: '📝', txt: '📄',
+  png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', svg: '🖼️', webp: '🖼️', ico: '🖼️', avif: '🖼️',
+  lock: '🔒',
+  yml: '⚙️', yaml: '⚙️', toml: '⚙️', ini: '⚙️', config: '⚙️',
+  env: '🔐',
+  sh: '💻', bash: '💻',
+  ico: '🖼️',
+  map: '🗺️',
+  sql: '🗄️',
+  log: '📜',
+  zip: '🗜️', tgz: '🗜️',
+}
+
+/** Emoji glyph for a file name, keyed off its extension / known dotfiles. */
+function fileIcon(name) {
+  const lower = String(name).toLowerCase()
+  if (lower === 'package.json' || lower === 'package-lock.json') return '📦'
+  if (lower === 'tsconfig.json') return '🔷'
+  if (lower === 'tailwind.config.js' || lower === 'postcss.config.js') return '🎨'
+  if (lower === 'vite.config.ts' || lower === 'vite.config.js') return '⚡'
+  if (lower === 'next.config.js' || lower === 'next.config.mjs') return '▲'
+  if (lower.startsWith('.')) return '⚙️'
+  const ext = lower.includes('.') ? lower.split('.').pop() : ''
+  return FILE_ICONS[ext] || '📄'
 }
 
 /* --------------------------------- theme -------------------------------- */
@@ -157,6 +258,7 @@ async function boot() {
     renderProviderPill(health)
     renderVersionChip(health)
     renderImageSizeChoices()
+    renderStartupWarnings(health)
     await refreshProjects()
     renderSettingsProviderChoices()
     $('#mock-banner').hidden = settings.provider !== 'mock'
@@ -164,6 +266,9 @@ async function boot() {
     toast(`Could not reach the server: ${err.message}`, 'error')
   }
   wireGlobalEvents()
+  wireMcpEvents()
+  wireConnectorEvents()
+  loadMcpServers()
 }
 
 async function refreshProjects() {
@@ -171,6 +276,8 @@ async function refreshProjects() {
   // Preserve live status for the active project if the server has it.
   const previous = new Map(state.projects.map((p) => [p.id, p]))
   state.projects = data.projects.map((p) => ({ ...previous.get(p.id), ...p }))
+  state.orphans = data.orphans || []
+  state.trash = data.trash || []
   renderSidebar()
   renderHome()
   if (state.activeId) {
@@ -255,9 +362,13 @@ function renderHome() {
             onclick: (event) => { event.stopPropagation(); selectProject(project.id) },
           }, 'Open'),
           el('button', {
+            class: 'btn btn-ghost btn-xs',
+            onclick: (event) => { event.stopPropagation(); openRename(project) },
+          }, 'Rename'),
+          el('button', {
             class: 'btn btn-danger btn-xs',
-            onclick: (event) => { event.stopPropagation(); confirmDelete(project) },
-          }, 'Delete'),
+            onclick: (event) => { event.stopPropagation(); confirmRemoveProject(project) },
+          }, 'Remove'),
         ),
       )
       homeCards.set(project.id, card)
@@ -277,6 +388,157 @@ function renderHome() {
     card.querySelector('.pc-slug').textContent = `${project.slug} · :${project.port}`
     card.querySelector('.pc-updated').textContent = `updated ${timeAgo(project.updatedAt)}`
   }
+
+  renderLeftovers()
+}
+
+/** Folders left on disk by a removal, and what currently sits in the trash. */
+let leftoversSignature = ''
+
+function renderLeftovers() {
+  const root = $('#home-leftovers')
+  if (!root) return
+  const { orphans, trash } = state
+  root.hidden = !orphans.length && !trash.length
+  // The 12s poll re-enters here constantly; only rebuild when the content moved,
+  // or a click can land on a node that has just been detached.
+  const signature = `${orphans.map((o) => o.slug).join(',')}|${trash.map((t) => t.name).join(',')}`
+  if (signature === leftoversSignature) return
+  leftoversSignature = signature
+  root.replaceChildren()
+
+  if (orphans.length) {
+    root.append(el('div', { class: 'leftover-group' },
+      el('div', { class: 'leftover-title' }, `On disk but not in the list (${orphans.length})`),
+      ...orphans.map((orphan) => el('div', { class: 'leftover-row' },
+        el('span', { class: 'leftover-name mono', text: orphan.slug }),
+        el('span', { class: 'leftover-path mono small muted', text: orphan.path }),
+        el('span', { class: 'spacer' }),
+        el('button', {
+          class: 'btn btn-ghost btn-xs', title: 'Register this folder as a project',
+          onclick: () => adoptOrphan(orphan),
+        }, 'Adopt'),
+        el('button', {
+          class: 'btn btn-ghost btn-xs', title: 'Move the folder into data/.trash',
+          onclick: () => confirmTrashOrphan(orphan),
+        }, 'Move to trash'),
+      )),
+    ))
+  }
+
+  if (trash.length) {
+    root.append(el('div', { class: 'leftover-group' },
+      el('div', { class: 'leftover-title' },
+        el('span', {}, `Trash (${trash.length})`),
+        el('span', { class: 'spacer' }),
+        el('button', {
+          class: 'btn btn-ghost btn-xs', title: 'Delete every folder in the trash permanently',
+          onclick: confirmEmptyTrash,
+        }, 'Empty trash'),
+      ),
+      ...trash.map((item) => el('div', { class: 'leftover-row' },
+        el('span', { class: 'leftover-name mono', text: item.name }),
+        el('span', {
+          class: 'leftover-path mono small muted',
+          text: item.deletedAt ? `removed ${timeAgo(item.deletedAt)}` : '',
+        }),
+      )),
+    ))
+  }
+}
+
+async function adoptOrphan(orphan) {
+  try {
+    const project = await api('/api/projects/import', { method: 'POST', body: { dir: orphan.path } })
+    toast(`Adopted ${project.slug}`, 'ok')
+    await refreshProjects()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+function confirmTrashOrphan(orphan) {
+  openConfirm(
+    `Move "${orphan.slug}" to the trash?`,
+    'The folder leaves data/projects/ and waits in data/.trash/. It is not deleted permanently while it is there.',
+    async () => {
+      try {
+        await api(`/api/orphans/${encodeURIComponent(orphan.slug)}`, { method: 'DELETE' })
+        toast(`Moved ${orphan.slug} to the trash`, 'ok')
+        await refreshProjects()
+      } catch (err) {
+        toast(err.message, 'error')
+      }
+    },
+  )
+}
+
+function confirmEmptyTrash() {
+  const count = state.trash.length
+  openConfirm(
+    'Empty the trash?',
+    `${count} folder${count === 1 ? '' : 's'} in data/.trash/ will be deleted permanently. This is the one removal that cannot be undone.`,
+    async () => {
+      try {
+        const result = await api('/api/trash/empty', { method: 'POST' })
+        toast(`Deleted ${result.removed} folder${result.removed === 1 ? '' : 's'}`, 'ok')
+        await refreshProjects()
+      } catch (err) {
+        toast(err.message, 'error')
+      }
+    },
+  )
+}
+
+function openRename(project) {
+  openInput({
+    title: 'Rename project',
+    label: 'Display name',
+    value: project.name,
+    hint: `Only the name changes. The folder and slug stay "${project.slug}".`,
+    onOk: async (name) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      try {
+        await api(`/api/projects/${project.id}`, { method: 'PATCH', body: { name: trimmed } })
+        toast(`Renamed to ${trimmed}`, 'ok')
+        await refreshProjects()
+      } catch (err) {
+        toast(err.message, 'error')
+      }
+    },
+  })
+}
+
+/**
+ * Startup problems worth stating before the first failed scaffold: a missing
+ * git/npm, or a registry written by a newer build (which this one will not touch).
+ */
+function renderStartupWarnings(health) {
+  const banner = $('#prereq-banner')
+  if (!banner) return
+  const notes = []
+
+  const missing = Object.entries(health?.prerequisites || {})
+    .filter(([, result]) => !result.ok)
+    .map(([tool]) => tool)
+  if (missing.length) {
+    notes.push(`${missing.join(' and ')} ${missing.length === 1 ? 'is' : 'are'} not installed. Stillworks needs ${missing.length === 1 ? 'it' : 'them'} to create projects and run the preview — install ${missing.join(' and ')} and restart.`)
+  }
+  if (health?.registry?.readOnly) {
+    notes.push(health.registry.readOnly)
+  }
+
+  banner.hidden = !notes.length
+  banner.replaceChildren(...notes.flatMap((note, i) => (i ? [el('br'), document.createTextNode(note)] : [document.createTextNode(note)])))
+}
+
+function downloadDiagnostics() {
+  const link = el('a', { href: '/api/diagnostics', download: '' })
+  document.body.append(link)
+  link.click()
+  link.remove()
+  toast('Diagnostics downloaded — API keys are masked in the file')
 }
 
 function renderProviderPill(health) {
@@ -300,12 +562,12 @@ function renderVersionChip(health) {
   const chip = $('#open-about')
   if (!chip) return
   chip.textContent = `v${health?.version || '?'}`
-  chip.title = `${health?.product || 'Lovable Local'} · ${health?.company || 'CodeWoxy'}\nClick for build details`
+  chip.title = `${health?.product || 'Stillworks'} · ${health?.company || 'CodeWoxy'}\nClick for build details`
 }
 
 function openAbout() {
   const health = state.health || {}
-  $('#about-product').textContent = `${health.product || 'Lovable Local'} v${health.version || '?'}`
+  $('#about-product').textContent = `${health.product || 'Stillworks'} v${health.version || '?'}`
   $('#about-company').textContent = health.company || 'CodeWoxy'
 
   const rows = [
@@ -348,6 +610,7 @@ async function selectProject(id) {
 
   $('#home').hidden = true
   $('#workspace').hidden = false
+  state.waitingEl = null
   $('#chat-messages').replaceChildren()
   $('#console-body').replaceChildren()
   $('#console-count').textContent = '0'
@@ -357,14 +620,17 @@ async function selectProject(id) {
   $('#editor').disabled = true
   $('#editor-path').textContent = 'no file selected'
   $('#btn-save').disabled = true
-  $('#chat-input').disabled = false
-  $('#chat-send').disabled = false
-  $('#chat-hint').textContent = 'Enter to send · Shift+Enter for a new line'
   const attach = $('#btn-attach')
   if (attach) attach.disabled = false
+  state.steerNodes.clear()
+  setAgentRunning(false)
   clearImages()
   hideReviewBar()
   clearSearchResults()
+  state.selectedElement = null
+  setSelectMode(false)
+  renderElementRef()
+  clearSuggestions()
 
   renderSidebar()
   renderTopbar()
@@ -392,11 +658,10 @@ function closeWorkspace() {
   disconnectEvents()
   $('#workspace').hidden = true
   $('#home').hidden = false
-  $('#chat-input').disabled = true
-  $('#chat-send').disabled = true
-  $('#chat-hint').textContent = 'Select a project to start'
   const attach = $('#btn-attach')
   if (attach) attach.disabled = true
+  state.steerNodes.clear()
+  setAgentRunning(false)
   clearImages()
   hideReviewBar()
   renderSidebar()
@@ -418,6 +683,9 @@ function renderTopbar() {
   const total = (usage.inputTokens || 0) + (usage.outputTokens || 0)
   $('#ws-usage').textContent = total
     ? `${formatTokens(usage.inputTokens || 0)}↑ ${formatTokens(usage.outputTokens || 0)}↓ · ${usage.turns || 0} turns`
+    : ''
+  $('#ws-usage').title = total
+    ? `${exactTokens(total)} tokens total — ${exactTokens(usage.inputTokens || 0)} input, ${exactTokens(usage.outputTokens || 0)} output`
     : ''
 
   const openBtn = $('#btn-open')
@@ -541,9 +809,13 @@ function renderSkillList() {
   const matches = state.skills.filter((s) => !q
     || [s.name, s.description, ...(s.tags || [])].join(' ').toLowerCase().includes(q))
 
+  const heading = $('#skill-list-heading')
+  if (heading) heading.hidden = !state.factory
   list.replaceChildren()
   if (!matches.length) {
-    list.append(el('div', { class: 'design-empty' }, 'No skills match that search.'))
+    list.append(el('div', { class: 'design-empty' }, state.factory
+      ? 'None of your skills match that search — check the factory below.'
+      : 'No skills match that search.'))
     updateSkillsCount()
     return
   }
@@ -562,7 +834,11 @@ function renderSkillList() {
         el('span', { class: 'skill-text' },
           el('span', { class: 'dc-name' },
             skill.name,
-            skill.builtin ? el('span', { class: 'skill-badge' }, 'built-in') : null,
+            skill.builtin
+              ? el('span', { class: 'skill-badge' }, 'built-in')
+              : skill.source === 'factory'
+                ? el('span', { class: 'skill-badge factory' }, 'factory')
+                : null,
           ),
           el('span', { class: 'dc-desc', text: skill.description || '' }),
           el('span', { class: 'dc-tags' },
@@ -601,8 +877,169 @@ function openSkills() {
   const search = $('#skill-search')
   if (search) search.value = ''
   renderSkillList()
+  renderFactory()
   openModal('modal-skills')
   setTimeout(() => search?.focus(), 40)
+}
+
+/* ----------------------------- skill factory ---------------------------- */
+
+/**
+ * Load the public catalog. Called when the search field is used, cached for
+ * the session, and non-fatal: if the network is down the picker still works.
+ */
+async function loadFactory({ refresh = false } = {}) {
+  if (state.factoryLoading) return
+  if (state.factory && !refresh) { renderFactory(); return }
+  state.factoryLoading = true
+  state.factoryError = null
+  renderFactory()
+  try {
+    const data = await api(`/api/skills/factory${refresh ? '?refresh=1' : ''}`)
+    state.factory = data.skills || []
+    state.factoryOrigin = data.origin
+    state.factoryWarning = data.warning || null
+  } catch (err) {
+    state.factory = []
+    state.factoryError = err.message
+  } finally {
+    state.factoryLoading = false
+    renderFactory()
+    renderSkillList()
+  }
+}
+
+function renderFactory() {
+  const box = $('#skill-factory')
+  const list = $('#skill-factory-list')
+  if (!box || !list) return
+  if (!state.factory && !state.factoryLoading && !state.factoryError) { box.hidden = true; return }
+  box.hidden = false
+
+  const meta = $('#skill-factory-meta')
+  const installed = new Set(state.skills.map((s) => s.origin).filter(Boolean))
+  const q = state.skillFilter.trim().toLowerCase()
+
+  if (state.factoryLoading && !state.factory) {
+    if (meta) meta.textContent = 'loading…'
+    list.replaceChildren(el('div', { class: 'design-empty' }, 'Fetching the skill catalog…'))
+    return
+  }
+  if (state.factoryError && !state.factory?.length) {
+    if (meta) meta.textContent = ''
+    list.replaceChildren(el('div', { class: 'design-empty' }, `Catalog unavailable: ${state.factoryError}`))
+    return
+  }
+
+  const matches = (state.factory || []).filter((s) => !q
+    || [s.id, s.name, s.description, ...(s.tags || [])].join(' ').toLowerCase().includes(q))
+  if (meta) {
+    const offline = state.factoryOrigin === 'local'
+    meta.textContent = `${matches.length} of ${state.factory.length}${offline ? ' · bundled copy (offline)' : ''}`
+    meta.title = offline ? (state.factoryWarning || 'The remote catalog could not be reached') : ''
+  }
+
+  list.replaceChildren()
+  if (!matches.length) {
+    list.append(el('div', { class: 'design-empty' }, 'No factory skills match that search.'))
+    return
+  }
+  for (const skill of matches) {
+    const have = installed.has(skill.id)
+    list.append(el('div', { class: `skill-card factory ${have ? 'installed' : ''}` },
+      el('button', {
+        type: 'button',
+        class: 'skill-main',
+        title: have ? 'Preview — download again to update' : 'Preview and download this skill',
+        onclick: () => openSkillPreview(skill),
+      },
+        el('span', { class: 'skill-icon', text: skill.icon || '🧩' }),
+        el('span', { class: 'skill-text' },
+          el('span', { class: 'dc-name' },
+            skill.name,
+            el('span', { class: have ? 'skill-badge installed' : 'skill-badge download' },
+              have ? 'installed' : 'download'),
+          ),
+          el('span', { class: 'dc-desc', text: skill.description || '' }),
+          el('span', { class: 'dc-tags' },
+            ...(skill.tags || []).map((t) => el('span', { class: 'dc-tag', text: t })),
+          ),
+        ),
+      ),
+    ))
+  }
+}
+
+async function openSkillPreview(entry) {
+  state.previewFactoryId = entry.id
+  $('#skill-preview-title').textContent = entry.name || entry.id
+  $('#skill-preview-desc').textContent = entry.description || ''
+  $('#skill-preview-tags').replaceChildren(
+    ...(entry.tags || []).map((t) => el('span', { class: 'dc-tag', text: t })),
+  )
+  $('#skill-preview-brief').textContent = 'Loading SKILL.md…'
+  $('#skill-preview-meta').textContent = ''
+  const install = $('#skill-preview-install')
+  install.disabled = true
+  install.textContent = 'Loading…'
+  openModal('modal-skill-preview')
+
+  try {
+    const doc = await api(`/api/skills/factory/${encodeURIComponent(entry.id)}`)
+    if (state.previewFactoryId !== entry.id) return
+    $('#skill-preview-title').textContent = doc.name || entry.name
+    $('#skill-preview-desc').textContent = doc.description || entry.description || ''
+    $('#skill-preview-tags').replaceChildren(
+      ...(doc.tags || []).map((t) => el('span', { class: 'dc-tag', text: t })),
+    )
+    $('#skill-preview-brief').textContent = doc.brief || '(this skill has no instructions)'
+    $('#skill-preview-meta').textContent = [
+      doc.version ? `v${doc.version}` : null,
+      doc.author || null,
+      doc.from === 'local' ? 'bundled copy' : null,
+    ].filter(Boolean).join(' · ')
+    install.disabled = false
+    install.textContent = state.skills.some((s) => s.origin === entry.id) ? 'Update & enable' : 'Download & enable'
+  } catch (err) {
+    if (state.previewFactoryId !== entry.id) return
+    $('#skill-preview-brief').textContent = `Could not download this skill.\n\n${err.message}`
+    install.disabled = false
+    install.textContent = 'Retry'
+  }
+}
+
+/** Download the skill into the library, then enable it for the open project. */
+async function installPreviewedSkill() {
+  const id = state.previewFactoryId
+  if (!id) return
+  const install = $('#skill-preview-install')
+  install.disabled = true
+  install.textContent = 'Downloading…'
+  try {
+    const skill = await api(`/api/skills/factory/${encodeURIComponent(id)}/install`, { method: 'POST' })
+    const index = state.skills.findIndex((s) => s.id === skill.id)
+    if (index === -1) state.skills.push(skill)
+    else state.skills[index] = { ...state.skills[index], ...skill }
+
+    const project = activeProject()
+    if (project && !(project.skillIds || []).includes(skill.id)) {
+      const updated = await api(`/api/projects/${project.id}/skills`, {
+        method: 'PUT',
+        body: { skillIds: [...(project.skillIds || []), skill.id] },
+      })
+      project.skillIds = updated.skillIds || []
+    }
+    state.previewFactoryId = null
+    openModal('modal-skills')
+    renderSkillList()
+    renderFactory()
+    updateSkillsTrigger()
+    toast(`${skill.name} installed and enabled`, 'ok')
+  } catch (err) {
+    install.disabled = false
+    install.textContent = 'Retry'
+    toast(err.message, 'error')
+  }
 }
 
 async function toggleSkill(skillId) {
@@ -703,6 +1140,11 @@ function renderTemplateChoices() {
     ? state.templates
     : [{ id: 'react-vite', label: 'React + Vite + Tailwind' }]
   for (const t of list) select.append(el('option', { value: t.id, text: t.label, title: t.hint }))
+  
+  // Show color scheme step when template is selected
+  select.addEventListener('change', () => {
+    $('#color-scheme-step').hidden = !select.value
+  })
 }
 
 /* ----------------------------- image attach ----------------------------- */
@@ -933,8 +1375,7 @@ async function refreshWorkspace(project) {
   if (status) {
     target.status = status.status
     target.lastError = status.lastError
-    state.agentRunning = Boolean(status.agentRunning)
-    $('#btn-abort').hidden = !state.agentRunning
+    setAgentRunning(Boolean(status.agentRunning))
     if (status.server?.logs?.length) {
       state.logs = status.server.logs
       renderLogs()
@@ -944,18 +1385,19 @@ async function refreshWorkspace(project) {
     updatePreviewState()
   }
   if (tree) renderFileTree(tree.tree)
-  if (git) {
-    state.commits = git.log || []
-    renderCommits()
-    if (git.status?.length) loadDiff(null)
-  }
+  applyGitSummary(git)
+  if (git?.status?.length) loadDiff(null)
 }
 
 function switchView(view) {
   state.view = view
   for (const tab of $$('#tabs .tab')) tab.classList.toggle('active', tab.dataset.view === view)
+  updateSlider($('#tabs'))
   for (const pane of $$('.view')) pane.hidden = pane.id !== `view-${view}`
-  if (view === 'preview') updatePreviewState()
+  if (view === 'preview') {
+    updatePreviewState()
+    updateSlider($('.device-widths'))
+  }
   if (view === 'code') {
     const project = activeProject()
     if (project) api(`/api/projects/${project.id}/tree`).then((d) => renderFileTree(d.tree)).catch(() => {})
@@ -963,8 +1405,7 @@ function switchView(view) {
   if (view === 'history') {
     const project = activeProject()
     if (project) api(`/api/projects/${project.id}/git`).then((g) => {
-      state.commits = g.log || []
-      renderCommits()
+      applyGitSummary(g)
       loadDiff(state.selectedCommit)
     }).catch(() => {})
   }
@@ -1013,6 +1454,113 @@ function reloadPreview() {
   if (frame.src) frame.src = frame.src
 }
 
+/* --------------------------- element selection --------------------------- */
+
+function setSelectMode(on) {
+  state.selecting = on
+  const btn = $('#btn-select')
+  if (btn) btn.classList.toggle('active', on)
+  const stage = $('#preview-stage')
+  if (stage) stage.classList.toggle('selecting', on)
+  const frame = $('#preview-frame')
+  try {
+    frame?.contentWindow?.postMessage({ source: 'lovable-host', type: 'select-mode', enabled: on }, '*')
+  } catch { /* frame not ready / cross-origin */ }
+}
+
+function describeElement(e) {
+  const id = e.id ? ` id="${e.id}"` : ''
+  const cls = e.classes ? ` class="${e.classes.split(/\s+/).slice(0, 3).join(' ')}"` : ''
+  const text = e.text ? ` "${e.text.slice(0, 80)}"` : ''
+  return `[Selected element in preview: <${e.tag}${id}${cls}>${text} — path: ${e.selector || e.tag}]`
+}
+
+function elementLabel(e) {
+  let label = e.tag
+  if (e.id) label += `#${e.id}`
+  else if (e.classes) {
+    const first = e.classes.split(/\s+/).filter(Boolean)[0]
+    if (first) label += `.${first}`
+  }
+  return label
+}
+
+function renderElementRef() {
+  const box = $('#element-ref')
+  if (!box) return
+  const e = state.selectedElement
+  if (!e) { box.hidden = true; box.replaceChildren(); return }
+  box.hidden = false
+  const label = elementLabel(e)
+  box.replaceChildren(
+    el('span', { text: '🎯' }),
+    el('span', { class: 'er-tag', text: label, title: e.text ? `${label} — "${e.text}"` : label }),
+    el('button', {
+      class: 'er-remove', type: 'button', title: 'Remove reference',
+      onclick: () => { state.selectedElement = null; renderElementRef() },
+    }, '×'),
+  )
+}
+
+/* ------------------------------ suggestions ------------------------------ */
+
+const SUGGESTION_HEAD = /^\s*(?:#{1,6}\s*)?(?:next steps?|suggestions?|follow.?ups?|you (?:can|could|might) also|would you like|what(?:'s| is) next|to do next|remaining (?:work|tasks?|items?)|i (?:can|could) also)\b/i
+const SUGGESTION_BULLET = /^\s*(?:[-*•]|\d+[.)])\s+(.*\S)\s*$/
+
+/** Pull up to 4 follow-up suggestions out of a trailing list in the reply. */
+function extractSuggestions(text) {
+  if (!text) return []
+  const lines = text.split('\n')
+  const out = []
+  let capturing = false
+  for (const line of lines) {
+    if (!capturing) {
+      if (SUGGESTION_HEAD.test(line)) capturing = true
+      continue
+    }
+    const m = line.match(SUGGESTION_BULLET)
+    if (m) {
+      const clean = m[1].replace(/[*_`]/g, '').replace(/\s+/g, ' ').trim()
+      if (clean) out.push(clean)
+      if (out.length >= 4) break
+    } else if (line.trim() === '') {
+      if (out.length) break
+    } else {
+      break
+    }
+  }
+  return out
+}
+
+function renderSuggestions(text) {
+  const bar = $('#suggestion-bar')
+  if (!bar) return
+  const items = extractSuggestions(text)
+  if (!items.length) { bar.hidden = true; bar.replaceChildren(); return }
+  bar.hidden = false
+  bar.replaceChildren(
+    el('span', { class: 'sb-label', text: 'Suggested next steps' }),
+    ...items.map((s) => el('button', {
+      class: 'suggestion-pill', type: 'button', title: s,
+      onclick: () => useSuggestion(s),
+    }, '✨', s.length > 46 ? `${s.slice(0, 46)}…` : s)),
+  )
+}
+
+function useSuggestion(text) {
+  const input = $('#chat-input')
+  if (!input || input.disabled) return
+  input.value = text
+  input.focus()
+  const bar = $('#suggestion-bar')
+  if (bar) { bar.hidden = true; bar.replaceChildren() }
+}
+
+function clearSuggestions() {
+  const bar = $('#suggestion-bar')
+  if (bar) { bar.hidden = true; bar.replaceChildren() }
+}
+
 /* Messages posted by src/preview-bridge.ts inside the generated app. */
 window.addEventListener('message', (event) => {
   const data = event.data
@@ -1036,6 +1584,11 @@ window.addEventListener('message', (event) => {
     // server was still reporting a stale build error.
     const project = activeProject()
     if (project && project.status === 'error') refreshWorkspace(project)
+  } else if (data.type === 'element-selected') {
+    state.selectedElement = data.element || null
+    setSelectMode(false)
+    renderElementRef()
+    if (state.selectedElement) $('#chat-input')?.focus()
   }
 })
 
@@ -1078,10 +1631,10 @@ function renderFileTree(tree) {
       } else {
         parent.append(el('button', {
           class: `tree-node ${state.selectedFile === node.path ? 'active' : ''}`,
-          style: `padding-left:${10 + depth * 12 + 17}px`,
+          style: `padding-left:${10 + depth * 12 + 15}px`,
           'data-path': node.path,
           onclick: () => openFile(node.path),
-        }, el('span', { class: 'tw' }), node.name))
+        }, el('span', { class: 'fi', text: fileIcon(node.name) }), node.name))
       }
     }
   }
@@ -1137,6 +1690,63 @@ async function saveFile() {
 }
 
 /* -------------------------------- history ------------------------------- */
+
+/** Feed a /git response into the History view, including the remote row. */
+function applyGitSummary(git) {
+  state.commits = git?.log || []
+  state.remote = git?.available ? (git.remote || null) : null
+  renderCommits()
+  renderPushRow()
+}
+
+function renderPushRow() {
+  const push = $('#btn-push')
+  if (!push) return
+  const label = $('#push-state')
+  // Never paint a URL that could carry an embedded token.
+  label.textContent = state.remote ? state.remote.replace(/\/\/[^@/]*@/, '//') : 'no remote'
+  label.title = state.remote || 'The history stays on this machine until a remote is set.'
+  $('#btn-set-remote').textContent = state.remote ? 'Edit remote' : 'Set remote'
+  push.disabled = !state.remote
+}
+
+function openRemoteEditor() {
+  const project = activeProject()
+  if (!project) return
+  openInput({
+    title: 'Git remote',
+    label: 'origin URL',
+    value: state.remote || '',
+    okLabel: 'Save remote',
+    hint: 'https://, ssh://, file:// or git@… — a URL with an embedded token is stored in plain text in the project’s .git/config.',
+    onOk: async (url) => {
+      try {
+        await api(`/api/projects/${project.id}/remote`, { method: 'PUT', body: { url: url.trim() } })
+        toast('Remote saved', 'ok')
+        applyGitSummary(await api(`/api/projects/${project.id}/git`).catch(() => null))
+      } catch (err) {
+        toast(err.message, 'error')
+      }
+    },
+  })
+}
+
+async function pushProject() {
+  const project = activeProject()
+  if (!project) return
+  const push = $('#btn-push')
+  push.disabled = true
+  push.textContent = 'Pushing…'
+  try {
+    await api(`/api/projects/${project.id}/push`, { method: 'POST' })
+    toast(`Pushed ${project.slug} to origin`, 'ok')
+  } catch (err) {
+    toast(err.message, 'error')
+  } finally {
+    push.textContent = 'Push'
+    renderPushRow()
+  }
+}
 
 function renderCommits() {
   const list = $('#commit-list')
@@ -1290,6 +1900,7 @@ function handleEvent(data) {
 
     case 'turn:start':
       setAgentRunning(true)
+      clearSuggestions()
       state.currentAssistantEl = null
       state.currentAssistantText = ''
       state.currentThinkingEl = null
@@ -1343,10 +1954,7 @@ function handleEvent(data) {
     case 'git:commit':
       hideReviewBar()
       if (data.committed) toast(`Committed ${data.hash}`, 'ok')
-      api(`/api/projects/${data.projectId}/git`).then((g) => {
-        state.commits = g.log || []
-        renderCommits()
-      }).catch(() => {})
+      api(`/api/projects/${data.projectId}/git`).then(applyGitSummary).catch(() => {})
       break
 
     case 'review:pending':
@@ -1367,18 +1975,70 @@ function handleEvent(data) {
       setTimeout(reloadPreview, 1500)
       break
 
+    case 'steer:queued': {
+      // The server echoes the message back so every connected tab sees it.
+      const wrap = el('div', { class: 'msg user steering' },
+        el('div', { class: 'msg-role' },
+          document.createTextNode('you'),
+          el('span', { class: 'steer-badge', text: 'steering…' }),
+        ),
+        el('div', { class: 'msg-bubble', text: data.text || '' }),
+      )
+      $('#chat-messages').append(wrap)
+      if (data.queuedAt) state.steerNodes.set(data.queuedAt, wrap)
+      scrollChat()
+      break
+    }
+
+    case 'turn:steered': {
+      const wrap = data.queuedAt ? state.steerNodes.get(data.queuedAt) : null
+      if (wrap) {
+        const badge = wrap.querySelector('.steer-badge')
+        if (badge) {
+          badge.textContent = `steered · step ${data.step}`
+          badge.classList.add('delivered')
+        }
+        state.steerNodes.delete(data.queuedAt)
+      } else {
+        addChatMessage('user', data.text || '')
+      }
+      scrollChat()
+      break
+    }
+
+    case 'steer:followup': {
+      // The message missed the running turn and became its own turn instead.
+      const wrap = data.queuedAt ? state.steerNodes.get(data.queuedAt) : null
+      if (wrap) {
+        const badge = wrap.querySelector('.steer-badge')
+        if (badge) {
+          badge.textContent = 'new turn'
+          badge.classList.add('delivered')
+        }
+        state.steerNodes.delete(data.queuedAt)
+      }
+      break
+    }
+
     case 'turn:end':
       setAgentRunning(false)
+      removeWaiting()
+      settleSteerBadges('not delivered')
       finalizeThinking()
       finalizeAssistant()
+      renderSuggestions(state.lastAssistantText)
       if (data.usage?.inputTokens || data.usage?.outputTokens) {
-        $('#usage-label').textContent = `${data.steps} steps · ${data.usage.inputTokens}↑ ${data.usage.outputTokens}↓`
+        const steered = data.steered ? ` · ${data.steered} steered` : ''
+        $('#usage-label').textContent = `${data.steps} steps${steered} · ${formatTokens(data.usage.inputTokens)}↑ ${formatTokens(data.usage.outputTokens)}↓`
+        $('#usage-label').title = `${exactTokens(data.usage.inputTokens)} input / ${exactTokens(data.usage.outputTokens)} output tokens`
       }
       refreshWorkspace()
       break
 
     case 'turn:error':
       setAgentRunning(false)
+      removeWaiting()
+      settleSteerBadges('not delivered')
       finalizeThinking()
       finalizeAssistant()
       addChatMessage('error', `${data.message}${data.hint ? `\n\n${data.hint}` : ''}`)
@@ -1387,6 +2047,8 @@ function handleEvent(data) {
 
     case 'turn:aborted':
       setAgentRunning(false)
+      removeWaiting()
+      settleSteerBadges('not delivered')
       finalizeThinking()
       finalizeAssistant()
       addChatMessage('system', 'Turn stopped.')
@@ -1409,34 +2071,136 @@ function handleEvent(data) {
 function setAgentRunning(running) {
   state.agentRunning = running
   $('#btn-abort').hidden = !running
-  $('#chat-send').disabled = running
-  $('#chat-input').disabled = running
-  $('#chat-hint').textContent = running ? 'Agent is working…' : 'Enter to send · Shift+Enter for a new line'
+  $('#btn-clear-chat').hidden = running
+  // The composer stays live while the agent works: sending steers the turn.
+  const send = $('#chat-send')
+  send.disabled = !state.activeId
+  send.classList.toggle('steer', running)
+  send.textContent = running ? 'Steer' : 'Send'
+  $('#chat-input').disabled = !state.activeId
+  
+  const project = activeProject()
+  const usage = project?.usage || {}
+  const contextUsed = ((usage.inputTokens || 0) + (usage.outputTokens || 0))
+  const contextMax = 128000 // typical max context
+  const contextPct = Math.min(100, Math.round((contextUsed / contextMax) * 100))
+  
+  // Context window as progress bar with percentage
+  const contextEl = $('#context-window')
+  if (state.activeId) {
+    contextEl.innerHTML = `
+      <span class="context-progress-bar">
+        <span class="context-progress-fill" style="width: ${contextPct}%"></span>
+      </span>
+      <span>${contextPct}%</span>
+      <div class="context-tooltip">
+        <div class="context-tooltip-row">
+          <span>Input tokens:</span>
+          <span class="mono">${formatTokens(usage.inputTokens || 0)}</span>
+        </div>
+        <div class="context-tooltip-row">
+          <span>Output tokens:</span>
+          <span class="mono">${formatTokens(usage.outputTokens || 0)}</span>
+        </div>
+        <div class="context-tooltip-row">
+          <span>Total used:</span>
+          <span class="mono">${exactTokens(contextUsed)}</span>
+        </div>
+        <div class="context-tooltip-row">
+          <span>Max capacity:</span>
+          <span class="mono">${exactTokens(contextMax)}</span>
+        </div>
+        <button type="button" class="btn-compress-context">Compress context</button>
+      </div>
+    `
+    
+    // Add click handler for tooltip
+    contextEl.onclick = (e) => {
+      e.stopPropagation()
+      contextEl.classList.toggle('active')
+    }
+    contextEl.querySelector('.btn-compress-context').addEventListener('click', (e) => {
+      e.stopPropagation()
+      contextEl.classList.remove('active')
+      compressContext()
+    })
+  } else {
+    contextEl.textContent = ''
+  }
+}
+
+/**
+ * Any steering badge still pending when a turn ends was never delivered.
+ * Deferred, because the route emits `steer:followup` a tick after `turn:end`
+ * when the message became its own turn instead.
+ */
+function settleSteerBadges(label) {
+  if (!state.steerNodes.size) return
+  setTimeout(() => {
+    for (const [, wrap] of state.steerNodes) {
+      const badge = wrap.querySelector('.steer-badge')
+      if (badge && !badge.classList.contains('delivered')) {
+        badge.textContent = label
+        badge.classList.add('missed')
+      }
+    }
+    state.steerNodes.clear()
+  }, 600)
 }
 
 /* ---------------------------------- chat -------------------------------- */
 
+function msgTimestamp() {
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 function addChatMessage(role, text) {
   const wrap = el('div', { class: `msg ${role}` },
     el('div', { class: 'msg-role', text: role }),
-    el('div', { class: 'msg-bubble', text }),
+    el('div', { class: 'msg-bubble' },
+      document.createTextNode(text),
+      el('span', { class: 'msg-time', text: msgTimestamp() }),
+    ),
   )
   $('#chat-messages').append(wrap)
   scrollChat()
   return wrap
 }
 
+/** Bouncing-dots placeholder shown between sending and the first real output. */
+function showWaiting() {
+  removeWaiting()
+  const wrap = el('div', { class: 'msg assistant waiting' },
+    el('div', { class: 'msg-role', text: 'assistant' }),
+    el('div', { class: 'msg-bubble waiting-bubble' }, el('i'), el('i'), el('i')),
+  )
+  $('#chat-messages').append(wrap)
+  state.waitingEl = wrap
+  scrollChat()
+}
+
+function removeWaiting() {
+  if (state.waitingEl) {
+    state.waitingEl.remove()
+    state.waitingEl = null
+  }
+}
+
 function appendAssistantDelta(delta) {
+  removeWaiting()
   if (!state.currentAssistantEl) {
     state.currentAssistantEl = el('div', { class: 'msg assistant' },
       el('div', { class: 'msg-role', text: 'assistant' }),
-      el('div', { class: 'msg-bubble' }),
+      el('div', { class: 'msg-bubble' },
+        el('span', { class: 'assistant-text' }),
+        el('span', { class: 'msg-time', text: msgTimestamp() }),
+      ),
     )
     $('#chat-messages').append(state.currentAssistantEl)
     state.currentAssistantText = ''
   }
   state.currentAssistantText += delta
-  state.currentAssistantEl.querySelector('.msg-bubble').textContent = state.currentAssistantText
+  state.currentAssistantEl.querySelector('.assistant-text').textContent = state.currentAssistantText
   scrollChat()
 }
 
@@ -1444,6 +2208,7 @@ function finalizeAssistant() {
   if (state.currentAssistantEl && !state.currentAssistantText.trim()) {
     state.currentAssistantEl.remove()
   }
+  if (state.currentAssistantText.trim()) state.lastAssistantText = state.currentAssistantText
   state.currentAssistantEl = null
   state.currentAssistantText = ''
 }
@@ -1456,6 +2221,7 @@ function finalizeAssistant() {
  */
 function appendThinkingDelta(delta) {
   if (!delta) return
+  removeWaiting()
   if (!state.currentThinkingEl) {
     state.thinkingStartedAt = Date.now()
     state.currentThinkingText = ''
@@ -1511,6 +2277,7 @@ function renderThinkingBlock(text, live = false) {
 }
 
 function addToolEvent(id, name, status, result) {
+  removeWaiting()
   let node = state.toolNodes.get(id)
 
   if (!node) {
@@ -1573,28 +2340,59 @@ function scrollChat() {
   box.scrollTop = box.scrollHeight
 }
 
+/** Compress context by summarizing earlier messages */
+async function compressContext() {
+  const project = activeProject()
+  if (!project) return
+  
+  try {
+    toast('Compressing context…')
+    const result = await api(`/api/projects/${project.id}/compress`, { method: 'POST' })
+    toast(`Context compressed: ${result.summary || 'done'}`, 'ok')
+    
+    // Reload history to reflect compression
+    await loadChatHistory(project)
+    
+    // Update usage display
+    const updated = await api(`/api/projects/${project.id}/status`)
+    if (updated.usage) {
+      project.usage = updated.usage
+      setAgentRunning(state.agentRunning)
+    }
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
 async function loadChatHistory(project) {
   try {
     const data = await api(`/api/projects/${project.id}/history`)
     const box = $('#chat-messages')
     box.replaceChildren()
+    state.steerNodes.clear()
+    state.lastAssistantText = ''
     for (const message of data.messages || []) {
       if (Array.isArray(message.content)) {
         for (const block of message.content) {
           if (block.type === 'thinking' && block.thinking?.trim()) {
             box.append(renderThinkingBlock(block.thinking, false))
           } else if (block.type === 'text' && block.text?.trim()) {
+            if (message.role !== 'user') state.lastAssistantText = block.text
             addChatMessage(message.role === 'user' ? 'user' : 'assistant', block.text)
           }
         }
       } else {
         const text = String(message.content || '')
-        if (text.trim()) addChatMessage(message.role === 'user' ? 'user' : 'assistant', text)
+        if (text.trim()) {
+          if (message.role !== 'user') state.lastAssistantText = text
+          addChatMessage(message.role === 'user' ? 'user' : 'assistant', text)
+        }
       }
     }
     if (!data.messages?.length) {
       addChatMessage('system', `New project. Describe the app you want — the agent edits the real files in ${project.slug}/ and the preview updates live.`)
     }
+    renderSuggestions(state.lastAssistantText)
     scrollChat()
   } catch (err) {
     toast(err.message, 'error')
@@ -1605,30 +2403,52 @@ async function sendMessage() {
   const project = activeProject()
   const input = $('#chat-input')
   const message = input.value.trim()
-  if (!project || !message || state.agentRunning) return
+  if (!project || !message) return
+
+  // Sending while the agent works steers the running turn instead of queueing a
+  // second one, so the composer never has to be disabled mid-run.
+  const steering = state.agentRunning
 
   input.value = ''
-  addChatMessage('user', message)
-  state.toolNodes.clear()
-  setAgentRunning(true)
-
   const images = state.pendingImages.map((img) => img.dataUrl)
   clearImages()
+
+  // Fold any picked preview element into the message the agent receives.
+  let outgoing = message
+  if (state.selectedElement) {
+    outgoing = `${describeElement(state.selectedElement)}\n\n${message}`
+    state.selectedElement = null
+    renderElementRef()
+  }
+  clearSuggestions()
+
+  if (!steering) {
+    addChatMessage('user', message)
+    state.toolNodes.clear()
+    state.steerNodes.clear()
+    setAgentRunning(true)
+    showWaiting()
+  }
   hideReviewBar()
 
   try {
     await api(`/api/projects/${project.id}/chat`, {
       method: 'POST',
-      body: { message, mode: state.mode, images },
+      body: { message: outgoing, mode: state.mode, images },
     })
   } catch (err) {
-    setAgentRunning(false)
+    if (!steering) {
+      setAgentRunning(false)
+      removeWaiting()
+    }
     if (err.payload?.needsKey) {
       addChatMessage('error', `${err.message}`)
       openSettings()
     } else {
-      addChatMessage('error', err.message)
+      addChatMessage('error', steering ? `Could not steer the running turn: ${err.message}` : err.message)
     }
+  } finally {
+    input.focus()
   }
 }
 
@@ -1643,46 +2463,140 @@ function closeModal() {
   $('#modal-root').hidden = true
 }
 
-/** Generic confirm dialog. Rebinds #confirm-ok to run `onOk` once, then close. */
-function openConfirm(title, body, onOk) {
+function showModal(selector) {
+  const modal = typeof selector === 'string' ? $(selector) : selector
+  if (modal) openModal(modal.id)
+}
+
+function hideModal(selector) {
+  const modal = typeof selector === 'string' ? $(selector) : selector
+  if (modal) {
+    modal.hidden = true
+    // If this was the last modal, hide the root
+    const visibleModals = $$('.modal').filter(m => !m.hidden)
+    if (!visibleModals.length) closeModal()
+  }
+}
+
+function escapeAttr(str) {
+  if (!str) return ''
+  return String(str).replace(/"/g, '&quot;')
+}
+
+/** Switch between settings tabs */
+function switchSettingsTab(tabName) {
+  // Update tab buttons
+  $$('.settings-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.tab === tabName)
+  })
+  
+  // Update panels
+  $$('.settings-tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.id === `panel-${tabName}`)
+  })
+}
+
+/** Reset personas to defaults */
+function resetPersonas() {
+  $('#settings-system-persona').value = DEFAULT_SYSTEM_PERSONA
+  $('#settings-assistant-persona').value = DEFAULT_ASSISTANT_PERSONA
+}
+
+/**
+ * Generic confirm dialog. Rebinds #confirm-ok to run `onOk` once, then close.
+ * `options.checkbox` shows a tick box and passes its state to `onOk`.
+ */
+function openConfirm(title, body, onOk, options = {}) {
   $('#confirm-title').textContent = title
   $('#confirm-body').textContent = body
-  openModal('modal-confirm')
+
+  const check = $('#confirm-check')
+  const checkInput = $('#confirm-check-input')
+  check.hidden = !options.checkbox
+  if (options.checkbox) {
+    $('#confirm-check-label').textContent = options.checkbox.label
+    checkInput.checked = !!options.checkbox.checked
+  }
 
   const ok = $('#confirm-ok')
   const replacement = ok.cloneNode(true)
   ok.replaceWith(replacement)
   replacement.addEventListener('click', async () => {
     try {
-      await onOk()
+      await onOk(options.checkbox ? checkInput.checked : undefined)
     } finally {
       closeModal()
     }
   })
+
+  openModal('modal-confirm')
 }
 
-function confirmDelete(project) {
+/**
+ * Generic one-field prompt modal. Rebinds #input-ok so it runs `onOk` with the
+ * current value once, then closes. Enter in the field submits.
+ */
+function openInput({ title, label, value = '', hint = '', okLabel = 'Save', onOk }) {
+  $('#input-title').textContent = title
+  $('#input-label').textContent = label
+  $('#input-hint').textContent = hint
+  const field = $('#input-value')
+  field.value = value
+
+  const ok = $('#input-ok')
+  const replacement = ok.cloneNode(true)
+  ok.replaceWith(replacement)
+  replacement.textContent = okLabel
+  replacement.addEventListener('click', async () => {
+    try {
+      await onOk($('#input-value').value)
+    } finally {
+      closeModal()
+    }
+  })
+
+  openModal('modal-input')
+  field.focus()
+  field.select()
+}
+
+function confirmRemoveProject(project) {
+  const imported = project.template === 'imported'
   openConfirm(
-    `Delete "${project.name}"?`,
-    `This removes ${project.path} and its git history permanently. The dev server will be stopped.`,
-    async () => {
+    `Remove "${project.name}"?`,
+    `The dev server stops and the project leaves the list; its chat history goes either way. `
+      + `Files stay at ${project.path} unless you tick the box below.`
+      + (imported ? ' This folder is one you imported, so ticking the box takes your own files with it.' : ''),
+    async (deleteFiles) => {
       try {
-        await api(`/api/projects/${project.id}`, { method: 'DELETE' })
-        toast(`Deleted ${project.slug}`, 'ok')
+        const result = await api(`/api/projects/${project.id}${deleteFiles ? '?files=1' : ''}`, { method: 'DELETE' })
+        if (!deleteFiles) toast(`Removed ${project.slug} from the list`, 'ok')
+        else if (result.filesDeleted) toast(`${project.slug} moved to the trash`, 'ok')
+        else toast(`Removed ${project.slug}, but its folder is still at ${result.folderLeftAt}`, 'error')
         if (state.activeId === project.id) closeWorkspace()
         await refreshProjects()
       } catch (err) {
         toast(err.message, 'error')
       }
     },
+    { checkbox: { label: 'Also move the project folder to the trash', checked: false } },
   )
 }
 
 async function createProject(name) {
   if (!name.trim()) return
   const template = $('#modal-new-template')?.value || undefined
+  const colorScheme = document.querySelector('input[name="color-scheme"]:checked')?.value || 'neutral'
+  
   try {
-    const project = await api('/api/projects', { method: 'POST', body: { name: name.trim(), template } })
+    const project = await api('/api/projects', { 
+      method: 'POST', 
+      body: { 
+        name: name.trim(), 
+        template,
+        designId: colorScheme !== 'neutral' ? colorScheme : null,
+      } 
+    })
     closeModal()
     await refreshProjects()
     await selectProject(project.id)
@@ -1695,8 +2609,12 @@ async function createProject(name) {
 function renderSettingsProviderChoices() {
   const row = $('#settings-provider')
   row.replaceChildren()
-  for (const provider of state.providers?.providers || ['openai', 'anthropic', 'mock']) {
-    const label = provider === 'mock' ? 'mock (scripted, no API)' : provider
+  for (const provider of state.providers?.providers || ['pollinations', 'openai', 'anthropic', 'mock']) {
+    const label = provider === 'mock'
+      ? 'mock (scripted, no API)'
+      : provider === 'pollinations'
+        ? 'pollinations (OpenAI-compatible, default)'
+        : provider
     row.append(el('label', {},
       el('input', {
         type: 'radio', name: 'provider', value: provider,
@@ -1766,16 +2684,27 @@ function openSettings() {
   $('#settings-maxsteps-val').textContent = String(s.agent.maxSteps || 24)
   $('#settings-test-result').hidden = true
 
+  // Load personas
+  const personas = s.personas || {}
+  $('#settings-system-persona').value = personas.system || DEFAULT_SYSTEM_PERSONA
+  $('#settings-assistant-persona').value = personas.assistant || DEFAULT_ASSISTANT_PERSONA
+
   $$('#settings-provider input').forEach((input) => {
     input.checked = input.value === s.provider
   })
   syncProviderVisibility()
+  
+  // Reset to first tab
+  switchSettingsTab('general')
+  
   openModal('modal-settings')
 }
 
 function syncProviderVisibility() {
-  const chosen = $$('#settings-provider input').find((i) => i.checked)?.value || 'openai'
-  $('#settings-openai').hidden = chosen !== 'openai'
+  const chosen = $$('#settings-provider input').find((i) => i.checked)?.value || 'pollinations'
+  // pollinations runs on the OpenAI-compatible adapter, so its endpoint fields
+  // are the same block the presets fill.
+  $('#settings-openai').hidden = !(chosen === 'openai' || chosen === 'pollinations')
   $('#settings-anthropic').hidden = chosen !== 'anthropic'
   return chosen
 }
@@ -1880,6 +2809,15 @@ async function saveSettingsSilently(chosen) {
     size: $('#settings-image-size').value || '1024x1024',
   }
   if (imageKey) patch.image.apiKey = imageKey
+  
+  // Save personas
+  const systemPersona = $('#settings-system-persona').value.trim()
+  const assistantPersona = $('#settings-assistant-persona').value.trim()
+  patch.personas = {
+    system: systemPersona !== DEFAULT_SYSTEM_PERSONA ? systemPersona : undefined,
+    assistant: assistantPersona !== DEFAULT_ASSISTANT_PERSONA ? assistantPersona : undefined,
+  }
+  
   state.settings = await api('/api/settings', { method: 'PUT', body: patch })
   state.providers = await api('/api/providers').catch(() => state.providers)
   renderImageState()
@@ -1910,6 +2848,275 @@ async function testImageModel() {
     box.className = 'test-result bad'
     box.textContent = err.message
   }
+}
+
+/* ------------------------------ MCP management ---------------------------- */
+
+let mcpServers = []
+let catalogCache = null
+
+async function loadMcpServers() {
+  try {
+    const res = await api('/api/mcp')
+    mcpServers = res.servers || []
+    renderMcpServerList()
+  } catch (err) {
+    console.warn('Failed to load MCP servers:', err)
+  }
+}
+
+function renderMcpServerList() {
+  const list = $('#mcp-server-list')
+  if (!list) return
+  
+  if (!mcpServers.length) {
+    list.innerHTML = '<p class="muted small">No MCP servers configured.</p>'
+    return
+  }
+  
+  list.innerHTML = mcpServers.map(srv => `
+    <div class="mcp-server-card" data-id="${srv.id}">
+      <span class="mcp-name" title="${escapeHtml(srv.name)}">${escapeHtml(srv.name)}</span>
+      <span class="mcp-transport">${srv.transport}</span>
+      <span class="mcp-status ${srv.running ? 'running' : ''}" title="${srv.running ? 'Running' : 'Stopped'}"></span>
+      <div class="mcp-actions">
+        <button class="btn btn-ghost btn-sm" onclick="toggleMcpServer('${srv.id}', ${!srv.running})" title="${srv.running ? 'Stop' : 'Start'}">
+          ${srv.running ? '⏹' : '▶'}
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="editMcpServer('${srv.id}')" title="Edit">✎</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteMcpServer('${srv.id}')" title="Delete">✕</button>
+      </div>
+      ${srv.error ? `<div class="mcp-error">${escapeHtml(srv.error)}</div>` : ''}
+      ${srv.toolCount > 0 ? `<div style="grid-column:1/-1;font-size:11px;color:var(--green)">✓ ${srv.toolCount} tools available</div>` : ''}
+    </div>
+  `).join('')
+}
+
+async function toggleMcpServer(id, start) {
+  try {
+    const endpoint = start ? `/api/mcp/${id}/start` : `/api/mcp/${id}/stop`
+    await api(endpoint, { method: 'POST' })
+    await loadMcpServers()
+  } catch (err) {
+    toast(err.message, 'bad')
+  }
+}
+
+async function deleteMcpServer(id) {
+  if (!confirm(`Remove MCP server "${id}"?`)) return
+  try {
+    await api(`/api/mcp/${id}`, { method: 'DELETE' })
+    await loadMcpServers()
+    toast('Server removed', 'ok')
+  } catch (err) {
+    toast(err.message, 'bad')
+  }
+}
+
+function editMcpServer(id) {
+  // TODO: Open add modal pre-filled with server config
+  toast('Edit functionality coming soon', 'ok')
+}
+
+async function loadMcpCatalog(search = '') {
+  const list = $('#catalog-list')
+  if (!list) return
+  
+  list.innerHTML = '<p class="muted small">Loading catalog…</p>'
+  
+  try {
+    const url = search ? `/api/mcp/catalog?q=${encodeURIComponent(search)}` : '/api/mcp/catalog'
+    const res = await api(url)
+    catalogCache = res
+    
+    if (!res.servers || !res.servers.length) {
+      list.innerHTML = '<p class="muted small">No servers found.</p>'
+      return
+    }
+    
+    renderCatalogList(res.servers)
+  } catch (err) {
+    list.innerHTML = `<p class="muted small" style="color:var(--red)">Failed to load catalog: ${escapeHtml(err.message)}</p>`
+  }
+}
+
+function renderCatalogList(servers) {
+  const list = $('#catalog-list')
+  if (!list) return
+  
+  list.innerHTML = servers.map(srv => `
+    <div class="catalog-card">
+      <div class="catalog-header">
+        <span class="catalog-name">${escapeHtml(srv.name)}</span>
+        <button class="btn btn-primary btn-sm" onclick="installFromCatalog('${escapeAttr(srv.name)}')">Install</button>
+      </div>
+      <div class="catalog-desc">${escapeHtml(srv.description || 'No description')}</div>
+      <div class="catalog-meta">
+        <span>${srv.transportType || 'stdio'}</span>
+        ${srv.version ? `<span>v${escapeHtml(srv.version)}</span>` : ''}
+        ${srv.repository ? `<a href="${escapeAttr(srv.repository)}" target="_blank" rel="noopener">repo</a>` : ''}
+      </div>
+      ${srv.tags && srv.tags.length ? `
+        <div class="catalog-tags" style="margin-top:6px">
+          ${srv.tags.slice(0, 5).map(t => `<span class="catalog-tag">${escapeHtml(t)}</span>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `).join('')
+}
+
+async function installFromCatalog(name) {
+  try {
+    const detail = await api(`/api/mcp/catalog/${encodeURIComponent(name)}`)
+    if (!detail || !detail.configTemplate) {
+      toast('Server configuration not available', 'bad')
+      return
+    }
+    
+    const config = {
+      name: detail.name,
+      ...detail.configTemplate,
+      enabled: true,
+    }
+    
+    await api('/api/mcp', { method: 'POST', body: config })
+    await loadMcpServers()
+    toast(`Installed ${detail.name}`, 'ok')
+    
+    // Close catalog modal
+    hideModal('#modal-mcp-catalog')
+  } catch (err) {
+    toast(err.message, 'bad')
+  }
+}
+
+function wireMcpEvents() {
+  // Add server button
+  $('#btn-add-mcp')?.addEventListener('click', () => {
+    showModal('#modal-add-mcp')
+  })
+  
+  // Browse catalog button
+  $('#btn-browse-catalog')?.addEventListener('click', () => {
+    showModal('#modal-mcp-catalog')
+    loadMcpCatalog()
+  })
+  
+  // Transport type toggle
+  document.querySelectorAll('input[name="transport"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const isStdio = e.target.value === 'stdio'
+      $('#mcp-stdio-fields').hidden = !isStdio
+      $('#mcp-http-fields').hidden = isStdio
+    })
+  })
+  
+  // Add server form submission
+  $('#form-add-mcp')?.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    
+    const name = $('#mcp-name').value.trim()
+    const transport = document.querySelector('input[name="transport"]:checked').value
+    
+    if (!name) {
+      toast('Server name is required', 'bad')
+      return
+    }
+    
+    try {
+      const config = { name, enabled: true }
+      
+      if (transport === 'stdio') {
+        config.transport = 'stdio'
+        config.command = $('#mcp-command').value
+        const argsStr = $('#mcp-args').value.trim()
+        config.args = argsStr ? argsStr.split(/\s+/) : []
+      } else {
+        config.transport = 'http'
+        config.url = $('#mcp-url').value.trim()
+        const headersStr = $('#mcp-headers').value.trim()
+        if (headersStr) {
+          try {
+            config.headers = JSON.parse(headersStr)
+          } catch {
+            toast('Headers must be valid JSON', 'bad')
+            return
+          }
+        }
+      }
+      
+      await api('/api/mcp', { method: 'POST', body: config })
+      await loadMcpServers()
+      toast('Server added', 'ok')
+      hideModal('#modal-add-mcp')
+      e.target.reset()
+    } catch (err) {
+      toast(err.message, 'bad')
+    }
+  })
+  
+  // Refresh catalog button
+  $('#btn-refresh-catalog')?.addEventListener('click', () => {
+    const search = $('#catalog-search').value.trim()
+    loadMcpCatalog(search)
+  })
+  
+  // Catalog search with debounce
+  let searchTimer
+  $('#catalog-search')?.addEventListener('input', (e) => {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+      loadMcpCatalog(e.target.value.trim())
+    }, 300)
+  })
+}
+
+/* ------------------------------- connectors ------------------------------ */
+
+const CONNECTOR_STORE = 'lovable-connectors'
+
+function connectorStates() {
+  try { return JSON.parse(localStorage.getItem(CONNECTOR_STORE)) || {} } catch { return {} }
+}
+
+function renderConnectorStates() {
+  const saved = connectorStates()
+  for (const btn of $$('.connector-toggle')) {
+    const connected = Boolean(saved[btn.dataset.connector])
+    btn.classList.toggle('connected', connected)
+    btn.textContent = connected ? 'Connected' : 'Connect'
+  }
+}
+
+function wireConnectorEvents() {
+  $$('.connector-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.connector
+      const saved = connectorStates()
+      const connect = !saved[id]
+      if (connect) saved[id] = true
+      else delete saved[id]
+      try { localStorage.setItem(CONNECTOR_STORE, JSON.stringify(saved)) } catch { /* private mode */ }
+      btn.classList.toggle('connected', connect)
+      btn.textContent = connect ? 'Connected' : 'Connect'
+      const name = btn.closest('.connector-card')?.querySelector('strong')?.textContent || id
+      toast(connect ? `${name} connector enabled` : `${name} connector disabled`, connect ? 'ok' : '')
+    })
+  })
+
+  $('#connector-search')?.addEventListener('input', (event) => {
+    const q = event.target.value.trim().toLowerCase()
+    for (const card of $$('.connector-card')) {
+      const text = card.textContent.toLowerCase()
+      card.hidden = Boolean(q) && !text.includes(q)
+    }
+    for (const group of $$('.category-group')) {
+      const visible = [...group.querySelectorAll('.connector-card')].some((c) => !c.hidden)
+      group.hidden = !visible
+    }
+  })
+
+  renderConnectorStates()
 }
 
 /* ------------------------------ global wiring --------------------------- */
@@ -1950,17 +3157,34 @@ function wireGlobalEvents() {
   $('#provider-pill').addEventListener('click', openSettings)
   $('#theme-toggle').addEventListener('click', toggleTheme)
 
-  $('#btn-design').addEventListener('click', openDesign)
-  $('#design-search').addEventListener('input', (event) => {
-    state.designFilter = event.target.value
-    renderDesignGrid()
+  $('#btn-connectors')?.addEventListener('click', () => openModal('modal-connectors'))
+  
+  // Close context tooltip when clicking outside
+  document.addEventListener('click', (e) => {
+    const contextEl = $('#context-window')
+    if (contextEl && !contextEl.contains(e.target)) {
+      contextEl.classList.remove('active')
+    }
   })
-  $('#design-clear').addEventListener('click', () => selectDesign(null))
-
+  
   $('#btn-skills').addEventListener('click', openSkills)
-  $('#skill-search').addEventListener('input', (event) => {
+  const skillSearch = $('#skill-search')
+  skillSearch.addEventListener('input', (event) => {
     state.skillFilter = event.target.value
     renderSkillList()
+    renderFactory()
+    loadFactory()
+  })
+  // Focusing the search field opens the factory: your skills first, then the
+  // downloadable catalog.
+  skillSearch.addEventListener('focus', () => {
+    renderFactory()
+    loadFactory()
+  })
+  $('#skill-preview-install').addEventListener('click', installPreviewedSkill)
+  $('#skill-preview-cancel').addEventListener('click', () => {
+    state.previewFactoryId = null
+    openModal('modal-skills')
   })
   $('#btn-add-skill').addEventListener('click', () => openSkillEditor())
   $('#skill-edit-form').addEventListener('submit', saveSkillFromEditor)
@@ -1976,6 +3200,15 @@ function wireGlobalEvents() {
   $('#settings-save').addEventListener('click', saveSettings)
   $('#settings-test').addEventListener('click', testConnection)
   $('#settings-test-image').addEventListener('click', testImageModel)
+  
+  // Settings tab switching
+  $$('.settings-tab').forEach(tab => {
+    tab.addEventListener('click', () => switchSettingsTab(tab.dataset.tab))
+  })
+  
+  // Persona reset button
+  $('#btn-reset-personas')?.addEventListener('click', resetPersonas)
+  
   $('#open-about').addEventListener('click', async () => {
     // Refresh so the About panel reflects the running build, not a stale boot.
     try {
@@ -2003,6 +3236,11 @@ function wireGlobalEvents() {
   })
 
   $('#btn-reload').addEventListener('click', reloadPreview)
+  $('#btn-select').addEventListener('click', () => {
+    if (!activeProject()) { toast('Select a project first'); return }
+    setSelectMode(!state.selecting)
+    if (state.selecting) toast('Click an element in the preview to reference it in chat')
+  })
   $('#btn-restart').addEventListener('click', async () => {
     const project = activeProject()
     if (!project) return
@@ -2030,6 +3268,7 @@ function wireGlobalEvents() {
     chip.addEventListener('click', () => {
       $$('.device-widths .chip').forEach((c) => c.classList.remove('active'))
       chip.classList.add('active')
+      updateSlider(chip.parentElement)
       const width = Number(chip.dataset.width)
       $('#preview-frame').style.width = width ? `${width}px` : '100%'
     })
@@ -2074,10 +3313,12 @@ function wireGlobalEvents() {
     }
   })
 
-  $$('.mode-btn').forEach((btn) => {
+  // Strategy toggle (Build / Plan) inside the composer
+  $$('.strategy-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.mode = btn.dataset.mode
-      $$('.mode-btn').forEach((b) => b.classList.toggle('active', b === btn))
+      state.mode = btn.dataset.strategy
+      $$('.strategy-btn').forEach((b) => b.classList.toggle('active', b === btn))
+      updateSlider(btn.parentElement)
       $('#chat-input').placeholder = state.mode === 'plan'
         ? 'Discuss the approach — no files are changed in Plan mode…'
         : 'Describe what to build or change…'
@@ -2095,7 +3336,7 @@ function wireGlobalEvents() {
       sendMessage()
     }
   })
-
+  
   $('#btn-abort').addEventListener('click', async () => {
     const project = activeProject()
     if (!project) return
@@ -2155,7 +3396,22 @@ function wireGlobalEvents() {
   })
 
   $('#btn-typecheck')?.addEventListener('click', runTypecheck)
-  $('#btn-export')?.addEventListener('click', exportProject)
+  $('#btn-export-code')?.addEventListener('click', exportProject)
+  $('#btn-remove-project')?.addEventListener('click', () => {
+    const project = activeProject()
+    if (project) confirmRemoveProject(project)
+  })
+  $('#btn-all-projects')?.addEventListener('click', closeWorkspace)
+  $('#btn-diagnostics')?.addEventListener('click', downloadDiagnostics)
+  $('#btn-set-remote')?.addEventListener('click', openRemoteEditor)
+  $('#btn-push')?.addEventListener('click', pushProject)
+
+  $('#input-value')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      $('#input-ok').click()
+    }
+  })
   $('#btn-restore')?.addEventListener('click', restoreCommit)
   $('#import-project')?.addEventListener('click', openImport)
   $('#modal-import-ok')?.addEventListener('click', doImport)
@@ -2180,6 +3436,14 @@ function wireGlobalEvents() {
       state.searchTimer = setTimeout(() => runCodeSearch(value), 350)
     })
   }
+
+  // Sliding pill indicators for the tab-button groups
+  for (const group of ['#tabs', '.device-widths', '.strategy-toggle']) initSlider($(group))
+  window.addEventListener('resize', () => {
+    updateSlider($('#tabs'))
+    updateSlider($('.device-widths'))
+    updateSlider($('.strategy-toggle'))
+  })
 
   // Poll so status stays honest even if an SSE reconnect is missed.
   setInterval(() => {

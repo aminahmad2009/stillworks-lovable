@@ -1,0 +1,587 @@
+[
+  {
+    "id": "api-integration-debugger",
+    "name": "Api Integration Debugger",
+    "icon": "🧩",
+    "description": "A skill for api-integration-debugger",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: API INTEGRATION DEBUGGER. A skill for api-integration-debugger",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/api-integration-debugger.json",
+    "filePath": "local_skills_repo/api-integration-debugger.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/api-integration-debugger-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "blank-screen-debugger",
+    "name": "Blank Screen Debugger",
+    "icon": "🧩",
+    "description": "A skill for blank-screen-debugger",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: BLANK SCREEN DEBUGGER. A skill for blank-screen-debugger",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/blank-screen-debugger.json",
+    "filePath": "local_skills_repo/blank-screen-debugger.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/blank-screen-debugger-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "brand-guidelines",
+    "name": "Brand Guidelines",
+    "icon": "🧩",
+    "description": "A skill for brand-guidelines",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: BRAND GUIDELINES. A skill for brand-guidelines",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/brand-guidelines.json",
+    "filePath": "local_skills_repo/brand-guidelines.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/brand-guidelines-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "build-error-rescue",
+    "name": "Build Error Rescue",
+    "icon": "🧩",
+    "description": "A skill for build-error-rescue",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: BUILD ERROR RESCUE. A skill for build-error-rescue",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/build-error-rescue.json",
+    "filePath": "local_skills_repo/build-error-rescue.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/build-error-rescue-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "edge-function-doctor",
+    "name": "Edge Function Doctor",
+    "icon": "🧩",
+    "description": "A skill for edge-function-doctor",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: EDGE FUNCTION DOCTOR. A skill for edge-function-doctor",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/edge-function-doctor.json",
+    "filePath": "local_skills_repo/edge-function-doctor.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/edge-function-doctor-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "feature-plan-before-build",
+    "name": "Feature Plan Before Build",
+    "icon": "🧩",
+    "description": "A skill for feature-plan-before-build",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: FEATURE PLAN BEFORE BUILD. A skill for feature-plan-before-build",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/feature-plan-before-build.json",
+    "filePath": "local_skills_repo/feature-plan-before-build.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/feature-plan-before-build-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "founder-qa-audit",
+    "name": "Founder Qa Audit",
+    "icon": "🧩",
+    "description": "A skill for founder-qa-audit",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: FOUNDER QA AUDIT. A skill for founder-qa-audit",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/founder-qa-audit.json",
+    "filePath": "local_skills_repo/founder-qa-audit.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/founder-qa-audit-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "lint-cleanup-safe-mode",
+    "name": "Lint Cleanup Safe Mode",
+    "icon": "🧩",
+    "description": "A skill for lint-cleanup-safe-mode",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: LINT CLEANUP SAFE MODE. A skill for lint-cleanup-safe-mode",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/lint-cleanup-safe-mode.json",
+    "filePath": "local_skills_repo/lint-cleanup-safe-mode.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/lint-cleanup-safe-mode-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "pre-publish-deployment-check",
+    "name": "Pre Publish Deployment Check",
+    "icon": "🧩",
+    "description": "A skill for pre-publish-deployment-check",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: PRE PUBLISH DEPLOYMENT CHECK. A skill for pre-publish-deployment-check",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/pre-publish-deployment-check.json",
+    "filePath": "local_skills_repo/pre-publish-deployment-check.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/pre-publish-deployment-check-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "prompt-splitter",
+    "name": "Prompt Splitter",
+    "icon": "🧩",
+    "description": "A skill for prompt-splitter",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: PROMPT SPLITTER. A skill for prompt-splitter",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/prompt-splitter.json",
+    "filePath": "local_skills_repo/prompt-splitter.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/prompt-splitter-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "safe-revert-check",
+    "name": "Safe Revert Check",
+    "icon": "🧩",
+    "description": "A skill for safe-revert-check",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: SAFE REVERT CHECK. A skill for safe-revert-check",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/safe-revert-check.json",
+    "filePath": "local_skills_repo/safe-revert-check.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/safe-revert-check-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "seo-launch-review",
+    "name": "Seo Launch Review",
+    "icon": "🧩",
+    "description": "A skill for seo-launch-review",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: SEO LAUNCH REVIEW. A skill for seo-launch-review",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/seo-launch-review.json",
+    "filePath": "local_skills_repo/seo-launch-review.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/seo-launch-review-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  },
+  {
+    "id": "version-control-safe-workflow",
+    "name": "Version Control Safe Workflow",
+    "icon": "🧩",
+    "description": "A skill for version-control-safe-workflow",
+    "tags": [
+      "general"
+    ],
+    "brief": "Skill: VERSION CONTROL SAFE WORKFLOW. A skill for version-control-safe-workflow",
+    "source": "local",
+    "installs": 100,
+    "weeklyInstalls": [
+      10,
+      12,
+      8,
+      15,
+      10
+    ],
+    "isOfficial": false,
+    "url": "https://example.com/public/skills/version-control-safe-workflow.json",
+    "filePath": "local_skills_repo/version-control-safe-workflow.json",
+    "version": "1.0.0",
+    "author": "Local Skills Repository",
+    "license": "MIT",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/lovable-local/version-control-safe-workflow-skill.git"
+    },
+    "keywords": [
+      "general",
+      "skill",
+      "ai",
+      "agent",
+      "lovable"
+    ],
+    "dependencies": {},
+    "devDependencies": {},
+    "peerDependencies": {},
+    "engines": {
+      "node": ">=14.0.0"
+    },
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    }
+  }
+]

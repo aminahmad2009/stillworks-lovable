@@ -6,6 +6,13 @@ import path from 'node:path'
 
 const EXCLUDED = new Set(['node_modules', '.git', 'dist', '.vite', '.cache', 'coverage'])
 
+/** Dotenv files hold secrets; the example file is the one meant to travel. */
+function isExcluded(name) {
+  if (EXCLUDED.has(name)) return true
+  if (name === '.env') return true
+  return name.startsWith('.env.') && name !== '.env.example'
+}
+
 let CRC_TABLE = null
 function crcTable() {
   if (CRC_TABLE) return CRC_TABLE
@@ -35,7 +42,7 @@ function dosDateTime(date) {
 async function collect(root, dir, prefix, out) {
   const entries = await readdir(dir, { withFileTypes: true })
   for (const entry of entries) {
-    if (EXCLUDED.has(entry.name)) continue
+    if (isExcluded(entry.name)) continue
     const full = path.join(dir, entry.name)
     const name = prefix ? `${prefix}/${entry.name}` : entry.name
     if (entry.isDirectory()) {
@@ -47,7 +54,7 @@ async function collect(root, dir, prefix, out) {
   }
 }
 
-/** Build a ZIP buffer of `rootDir` (node_modules/.git/dist excluded). */
+/** Build a ZIP buffer of `rootDir`, skipping build output and any dotenv file. */
 export async function zipDirectory(rootDir) {
   const files = []
   await collect(rootDir, rootDir, '', files)

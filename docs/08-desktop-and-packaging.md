@@ -9,15 +9,21 @@ IPC-driven features beyond opening external links, and no second Node runtime.
    running window via the `second-instance` event.
 2. **Port discovery.** `getFreePort(4310)` probes upward for up to 60 ports, so a desktop app and a
    CLI run can coexist.
-3. **Data directory.** Packaged: `%APPDATA%/Lovable Local/data` (`app.getPath('userData')`) — because
+3. **Data directory.** Packaged: `%APPDATA%/Stillworks/data` (`app.getPath('userData')`) — because
    `resources/app` is read-only after install. In dev: the repository's `./data`, so both modes see
    the same projects.
-4. **Environment first, import second.** `PORT`, `HOST` and `LOVABLE_DATA_DIR` are set *before*
+4. **Rename migration.** The product was previously "Lovable Local", whose data lived in
+   `%APPDATA%/Lovable Local/data`. On packaged first launch, `migrateLegacyData()` copies any legacy
+   folder listed in `package.json → legacyProductNames` into the new location — only if the new
+   `registry.json` is missing, never overwriting, and **never deleting the original** — then logs the
+   source path and raises a notification. An upgrade must never open to an empty project list.
+5. **Environment first, import second.** `PORT`, `HOST` and `STILLWORKS_DATA_DIR` are set *before*
    `await import('../server/index.js')`, since `server/config.js` reads them at module-evaluation
-   time. Importing statically would bake in the defaults.
-5. **Readiness wait.** `waitForServer()` polls `/api/health` every 250 ms for up to 25 s before the
+   time. Importing statically would bake in the defaults. `LOVABLE_DATA_DIR` is still honoured as a
+   deprecated alias so existing scripts and shortcuts keep working.
+6. **Readiness wait.** `waitForServer()` polls `/api/health` every 250 ms for up to 25 s before the
    window loads the URL.
-6. **Window + tray.** 1440×900 (min 940×600), dark background, `autoHideMenuBar: true`,
+7. **Window + tray.** 1440×900 (min 940×600), dark background, `autoHideMenuBar: true`,
    `contextIsolation: true`, `nodeIntegration: false`, preload at `electron/preload.cjs`.
 
 ## Window behaviour
@@ -31,7 +37,7 @@ IPC-driven features beyond opening external links, and no second Node runtime.
 - **External links.** `setWindowOpenHandler` sends any `http(s)` target to the system browser instead
   of opening a bare Electron window — that matters for "Open ↗" on the preview. The preload bridge
   exposes an `open-external` IPC channel for the same purpose.
-- **Tray.** Icon resized to 16×16, tooltip `Lovable Local v0.2.0 — CodeWoxy`, menu showing product
+- **Tray.** Icon resized to 16×16, tooltip `Stillworks v0.2.0 — CodeWoxy`, menu showing product
   name and publisher (disabled header rows), Open, Open in Browser, Quit. Clicking the tray icon
   restores the window.
 
@@ -47,8 +53,8 @@ after the app closes.
 
 ```jsonc
 {
-  "appId": "com.codewoxy.lovable-local",
-  "productName": "Lovable Local",
+  "appId": "com.codewoxy.stillworks",
+  "productName": "Stillworks",
   "copyright": "Copyright © 2026 CodeWoxy",
   "artifactName": "${productName}-Setup-${version}.${ext}",
   "asar": false,
@@ -65,21 +71,21 @@ Notes:
 - **`asar: false`** keeps the app as plain files. The server spawns `npm`, `npx` and `git` from the
   system PATH and reads its own templates from disk, which is simpler to reason about unpacked.
 - **Versioned artifacts.** `artifactName` puts the semver in the installer filename, so
-  `Lovable Local-Setup-0.2.0.exe` cannot be confused with an older build.
+  `Stillworks-Setup-0.2.0.exe` cannot be confused with an older build.
 - `release/` is git-ignored; installers are ~80 MB and reproducible from source.
 
 ### Building
 
 ```bash
 npm install          # once
-npm run dist:win     # → release/Lovable Local-Setup-0.2.0.exe
+npm run dist:win     # → release/Stillworks-Setup-0.2.0.exe
 ```
 
 If the build fails with `ERR_ELECTRON_BUILDER_CANNOT_EXECUTE` or "Access is denied" on a DLL, a
 previous instance is still running and holding `release/win-unpacked`:
 
 ```bash
-taskkill //IM "Lovable Local.exe" //F
+taskkill //IM "Stillworks.exe" //F
 rm -rf release/win-unpacked
 npm run dist:win
 ```
@@ -91,8 +97,36 @@ stale cache is the usual cause of a hang there.
 
 ```bash
 node -e "const p=require('./package.json');console.log(p.version, p.build.appId)"
-npm run version:check          # CHANGELOG has an entry for this version
+npm run version:check          # CHANGELOG and the panel metadata name this version
 ```
 
 Then install, launch, and confirm the sidebar version chip and the About panel both show the version
 you intended, and that the data directory is under `%APPDATA%`.
+
+## Icons and web assets
+
+`build/icon.png` is the single source of truth: a 1024 px master used by electron-builder for the
+installer, shortcuts and the window icon (`electron/main.js` loads it through `nativeImage`).
+
+The panel's own icon set is derived from it, never redrawn:
+
+```bash
+npm run icons:build     # make-icons.ps1 (System.Drawing) then make-favicon-ico.mjs
+```
+
+That writes `web/icons/` — `icon-16/32/48/192/512.png`, `apple-touch-icon.png`, `maskable-512.png`,
+`favicon.ico` (the three small sizes, PNG-encoded) and `og-image.png` (1200×630).
+
+One quirk worth knowing: the master paints its rounded square on an **opaque white page** — its corners
+are white pixels, not transparency. Scaling it straight to 16 px shows a white box, so `make-icons.ps1`
+measures the artwork's own corner radius and clips the favicons to it, and over-scans the iOS and
+maskable variants instead, which must be full-bleed squares. `tests/assets.test.js` pins the dimensions,
+the RGBA-versus-opaque split, the ICO directory and the manifest references, so a stale or hand-edited
+asset fails CI.
+
+The panel's crawler metadata lives in the `<head>` of `web/index.html`: description, theme colors for
+both palettes, the icon links, `og:`/`twitter:` tags, `robots.txt`, `site.webmanifest`, and a
+`SoftwareApplication` JSON-LD block whose `softwareVersion` `npm run version:check` keeps in step with
+`package.json`. None of it renders, and `og:url` is deliberately absent — the panel is served from an
+arbitrary localhost port, so a hard-coded origin would be wrong; add absolute `og:url` and `og:image`
+values if you ever publish it.

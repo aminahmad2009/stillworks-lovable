@@ -28,8 +28,8 @@ export async function gitInit(cwd) {
   await git(cwd, ['init', '--quiet'])
   // Commits fail without an identity; set a local one so scaffolded projects
   // always have working history regardless of the user's global config.
-  await git(cwd, ['config', 'user.email', 'agent@lovable.local']).catch(() => {})
-  await git(cwd, ['config', 'user.name', 'Lovable Local Agent']).catch(() => {})
+  await git(cwd, ['config', 'user.email', 'agent@stillworks.local']).catch(() => {})
+  await git(cwd, ['config', 'user.name', 'Stillworks Agent']).catch(() => {})
   await git(cwd, ['config', 'core.autocrlf', 'false']).catch(() => {})
   return true
 }
@@ -113,6 +113,14 @@ export async function gitRemoteAdd(cwd, url) {
   await git(cwd, ['remote', 'remove', 'origin']).catch(() => {})
   await git(cwd, ['remote', 'add', 'origin', url])
   return true
+}
+
+export async function gitRemoteGet(cwd) {
+  try {
+    return (await git(cwd, ['remote', 'get-url', 'origin'])).trim() || null
+  } catch {
+    return null
+  }
 }
 
 export async function gitPush(cwd, branch = 'main') {

@@ -2,9 +2,9 @@
 
 ## What it is
 
-Lovable Local is a **prompt-to-app builder that runs entirely on your machine**. It reproduces the
-core loop of a hosted product like Lovable — describe it, watch it build, see it live — without any
-of the hosting, account or collaboration machinery.
+Stillworks is a **prompt-to-app builder that runs entirely on your machine**: describe it, watch it
+build, see it live — with none of the hosting, account or collaboration machinery. The output is an
+ordinary Vite project with its own git history, so nothing is locked in.
 
 One control server, one browser window (or one Electron window), any number of projects.
 
@@ -77,6 +77,16 @@ NSIS installer.
   escapes the project directory.
 - `run_command` is allowlisted: npm/npx/pnpm/yarn package and script operations, `node` on a project
   script, `tsc`, and read-mostly git. Anything else is refused with an explanation rather than run.
+  Because the command goes through a shell, **every** `;`/`&`/`|`-separated segment is checked and
+  command substitution or redirection is refused outright, so a permitted prefix cannot carry a
+  permitted-looking request into an unpermitted command.
+- Project processes get a scrubbed environment. `npm install`, `node` on a project script, the dev
+  server and MCP connectors see only what they need to run — `PATH`, home and temp directories, locale,
+  proxy and CA configuration, `npm_config_*` — and never the platform's API keys or the credentials in
+  the shell that started it. A dependency's postinstall script is untrusted code, so this is a
+  boundary, not a convenience. Opt a specific name back in with `LOVABLE_CHILD_ENV`.
+- Exported ZIPs skip `.env` and `.env.*` (`.env.example` is kept), so sharing a project cannot carry a
+  secret the agent wrote.
 - API keys live in `data/settings.json` (plaintext, local) or come from the environment. Keys that
   came from the environment are never written back to disk, and the API always returns them masked.
 - `data/` is git-ignored. It holds keys, chat history and your generated projects.

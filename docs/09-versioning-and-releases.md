@@ -4,12 +4,18 @@
 
 | Field | Value | Declared in |
 |---|---|---|
-| Product name | `Lovable Local` | `package.json → build.productName`, `productName` |
-| **Product ID** | `codewoxy-lovable-local` | `package.json → productId` |
+| Product name | `Stillworks` | `package.json → build.productName`, `productName` |
+| **Product ID** | `codewoxy-stillworks` | `package.json → productId` |
 | Publisher | `CodeWoxy` | `package.json → company`, `author`, `build.win.publisherName` |
-| Desktop app ID | `com.codewoxy.lovable-local` | `package.json → build.appId` |
+| Desktop app ID | `com.codewoxy.stillworks` | `package.json → build.appId` |
 | Repository | `github.com/aminahmad2009/lovable-clone` | `package.json → repository` |
 | Version | `0.2.0` | `package.json → version` |
+
+> **Renamed.** This product shipped as **Lovable Local** with product ID `codewoxy-lovable-local`
+> through v0.2.0. The name and ID above are the current identity; the old strings survive only in the
+> historical changelog entries and in `package.json → legacyProductNames`, which drives the
+> `%APPDATA%` migration described in [Desktop app and packaging](08-desktop-and-packaging.md).
+> `repository` still points at the original GitHub slug until that is renamed.
 
 The **product ID** is the stable identifier for this product across builds, machines and installs —
 it never changes, while the version does. It is what you would use to key licensing, telemetry,
@@ -26,8 +32,8 @@ it:
 // server/config.js
 const pkg = JSON.parse(readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'))
 export const APP_VERSION = pkg.version
-export const PRODUCT_ID  = pkg.productId || 'codewoxy-lovable-local'
-export const PRODUCT_NAME = pkg.build?.productName || 'Lovable Local'
+export const PRODUCT_ID  = pkg.productId || 'codewoxy-stillworks'
+export const PRODUCT_NAME = pkg.build?.productName || 'Stillworks'
 export const COMPANY      = pkg.company || 'CodeWoxy'
 export const REPOSITORY   = …
 ```
@@ -85,12 +91,12 @@ compare/release URLs and should be updated with each release.
    `[Unreleased]` behind, and add the compare link at the bottom.
 4. `npm run version:check` → must pass.
 5. Run the test suites (image generation, agent error contract) and smoke-test a real turn.
-6. `npm run dist:win` → confirm the artifact is named `Lovable Local-Setup-x.y.z.exe`, install it,
+6. `npm run dist:win` → confirm the artifact is named `Stillworks-Setup-x.y.z.exe`, install it,
    and check the About panel reports `x.y.z`.
 7. Commit `chore(release): x.y.z`, tag it, push both:
    ```bash
    git add -A && git commit -m "chore(release): 0.2.0"
-   git tag -a v0.2.0 -m "Lovable Local 0.2.0"
+   git tag -a v0.2.0 -m "Stillworks 0.2.0"
    git push origin main --tags
    ```
 8. Publish a GitHub Release from the tag with the changelog section as the body and the installer

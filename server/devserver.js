@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { existsSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
-import { MAX_RUNNING_SERVERS } from './config.js'
+import { MAX_RUNNING_SERVERS, childEnv } from './config.js'
 
 const IS_WINDOWS = process.platform === 'win32'
 const NPM = IS_WINDOWS ? 'npm.cmd' : 'npm'
@@ -121,7 +121,7 @@ class DevServer {
     const result = await new Promise((resolve) => {
       const child = spawn(NPM, ['install', '--no-audit', '--no-fund', '--loglevel=error'], {
         cwd: this.dir,
-        env: process.env,
+        env: childEnv(),
         shell: IS_WINDOWS,
         windowsHide: true,
       })
@@ -180,15 +180,13 @@ class DevServer {
 
     const child = spawn(command, args, {
       cwd: this.dir,
-      env: {
-        ...process.env,
+      env: childEnv({
         PORT: String(this.port),
-        FORCE_COLOR: '0',
         // When the server runs inside Electron, process.execPath is the app
         // binary; this flag makes it behave as plain Node so vite.js runs.
         // Real node ignores the variable, so CLI mode is unaffected.
         ...(useBin ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
-      },
+      }),
       shell: useBin ? false : IS_WINDOWS,
       windowsHide: true,
     })

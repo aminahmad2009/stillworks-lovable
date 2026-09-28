@@ -26,8 +26,8 @@ npm start                    # → http://127.0.0.1:4310
 The startup banner confirms the build identity and configuration:
 
 ```
-  Lovable Local v0.2.0 — built by CodeWoxy
-  product id      codewoxy-lovable-local
+  Stillworks v0.2.0 — built by CodeWoxy
+  product id      codewoxy-stillworks
   control panel   http://127.0.0.1:4310
   data directory  D:\test-projects\lovable\data
   provider        openai (key configured)
@@ -43,10 +43,10 @@ chat panel. The dev server starts on the first turn; the preview fills in once V
 ```bash
 npm install                  # once, for electron + electron-builder
 npm run desktop              # dev: window + in-process server, data in ./data
-npm run dist:win             # produce release/Lovable Local-Setup-0.2.0.exe
+npm run dist:win             # produce release/Stillworks-Setup-0.2.0.exe
 ```
 
-The packaged app stores its data in `%APPDATA%/Lovable Local/data` instead of the repository, so an
+The packaged app stores its data in `%APPDATA%/Stillworks/data` instead of the repository, so an
 installed build never writes inside `Program Files`. See
 [Desktop app & packaging](08-desktop-and-packaging.md).
 
@@ -62,6 +62,7 @@ variables override it. Environment wins so a headless or scripted run needs no U
 | `LOVABLE_DATA_DIR` | Where registry, settings, projects and history live (default `<repo>/data`). |
 | `PROJECT_PORT_START` / `PROJECT_PORT_END` | Dev-server port range (default `5180`–`5380`). |
 | `MAX_RUNNING_SERVERS` | Cap on concurrent dev servers (default `4`). |
+| `LOVABLE_CHILD_ENV` | Comma-separated names to add to the scrubbed environment handed to `npm`, project scripts and MCP connectors. Only needed when a build genuinely requires a variable that is not `PATH`/home/proxy config. |
 | `OPENAI_API_KEY` | Key for the OpenAI-compatible provider, used when Settings is blank. |
 | `OPENAI_BASE_URL` | Base URL for that provider (e.g. an NVIDIA or Groq endpoint). |
 | `OPENAI_MODEL` | Default model name. |

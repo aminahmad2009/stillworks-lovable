@@ -1,13 +1,14 @@
 {
-  "name": "lovable-local",
+  "name": "stillworks",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Single-user, local clone of a prompt-to-app builder: multi-project registry, agent with file tools, image generation, per-project Vite dev servers, live preview, git history.",
+  "description": "The prompt-to-app studio that runs on your machine: multi-project registry, agent with sandboxed file tools, image generation, per-project Vite dev servers, live preview and real git history. Bring your own model key; nothing is hosted.",
   "author": "CodeWoxy",
   "company": "CodeWoxy",
-  "productName": "Lovable Local",
-  "productId": "codewoxy-lovable-local",
+  "productName": "Stillworks",
+  "productId": "codewoxy-stillworks",
+  "legacyProductNames": ["Lovable Local"],
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
@@ -19,10 +20,14 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
+    "test": "node --test \"tests/*.test.js\"",
     "desktop": "electron .",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
-    "version:check": "node -e \"const p=require('./package.json');const c=require('fs').readFileSync('CHANGELOG.md','utf8');if(!c.includes('## ['+p.version+']')){console.error('CHANGELOG.md is missing an entry for '+p.version);process.exit(1)}console.log('version '+p.version+' present in CHANGELOG.md')\""
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "version:check": "node build/check-version.mjs",
+    "icons:build": "powershell -NoProfile -ExecutionPolicy Bypass -File build/make-icons.ps1 && node build/make-favicon-ico.mjs"
   },
   "engines": {
     "node": ">=20.10"
@@ -32,8 +37,8 @@
     "electron-builder": "^25.0.0"
   },
   "build": {
-    "appId": "com.codewoxy.lovable-local",
-    "productName": "Lovable Local",
+    "appId": "com.codewoxy.stillworks",
+    "productName": "Stillworks",
     "copyright": "Copyright © 2026 CodeWoxy",
     "artifactName": "${productName}-Setup-${version}.${ext}",
     "directories": {
@@ -66,7 +71,18 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Lovable Local"
+      "shortcutName": "Stillworks"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Development",
+      "maintainer": "CodeWoxy",
+      "icon": "build/icon.png"
     }
   }
 }
